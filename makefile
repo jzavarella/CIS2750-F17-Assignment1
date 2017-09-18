@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -std=c11
+CFLAGS = -Wall -std=c99 -g
 LDFLAGS =
 OBJFILES = src/Main.o src/LinkedListAPI.o src/CalendarParser.o
 TARGET = iCalendar
@@ -13,7 +13,7 @@ run:
 	./$(TARGET)
 
 valgrind:
-	valgrind ./$(TARGET)
+	valgrind --leak-check=full ./$(TARGET)
 
 clean:
 	rm -f $(OBJFILES) $(TARGET) *~ .DS_Store

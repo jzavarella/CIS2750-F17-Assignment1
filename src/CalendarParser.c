@@ -38,6 +38,17 @@ int match(const char* string, char* pattern) {
   return(1);
 }
 
+/**
+  *Checks to see if a string is allocated before freeing it
+  *This function is used to save space
+  TODO: REPLAE ALL STATEMENTS
+*/
+void safelyFreeString(char* c) {
+  if (c) {
+    free(c);
+  }
+}
+
 char* printProp(void *toBePrinted) {
   Property* p = (Property*) toBePrinted;
   size_t finalSize = 0;
@@ -67,8 +78,8 @@ int compareProp(const void *first, const void *second){
   char* s2 = printProp((void*)second);
   int result = strcmp(s1, s2);
 
-  free(s1);
-  free(s2);
+  safelyFreeString(s1);
+  safelyFreeString(s2);
 	return result;
 }
 
@@ -78,17 +89,7 @@ void deleteFunc(void *toBeDeleted){
   if (!p) {
     return; // Cant free nothing
   }
-  if ((p->propName) != NULL) {
-    free(p->propName);
-  }
-  if ((p->propDescr) != NULL) {
-    free(p->propDescr);
-  }
 	free(p);
-}
-
-void cleanLine(char* line) {
-  line[strcspn(line, "\n")] = '\0';
 }
 
 char* extractPropertyName(char* line) {
@@ -123,11 +124,10 @@ char* extractPropertyDescription(char* line) {
     return NULL;
   }
 
-  size_t size = (lineLength - 1) - (colonIndex + 1); // Calculate the number of chars in the final (minus 1 on line length to remove the last char which is '\n')
+  size_t size = lineLength - (colonIndex + 1); // Calculate the number of chars in the final (+1 on colon asto not include the colon)
   char* description = malloc(size * sizeof(char) + 1); // Allocate that much room and add 1 for null terminator
   strncpy(description, &line[colonIndex + 1], size); // Copy 'size' chars into description starting from the index of ":" + 1
   description[size] = '\0'; // Add null terminator because strncpy wont
-
   return description;
 }
 
@@ -142,8 +142,8 @@ Property* extractPropertyFromLine(char* line) {
   char* propName = extractPropertyName(line);
   char* propDescr = extractPropertyDescription(line);
   Property* p = createProperty(propName, propDescr);
-  free(propName);
-  free(propDescr);
+  safelyFreeString(propName);
+  safelyFreeString(propDescr);
   return p;
 }
 
@@ -165,19 +165,18 @@ ErrorCode readLinesIntoList(FILE* file, List* list, int bufferSize) {
 
   while ((read = getline(&line, &len, file)) != -1) {
     if (match(line, "^[A-Z]+:.*$")) {
+      if (line[strlen(line) - 1] == '\n') { // Remove new line from end of line
+        line[strlen(line) - 1] = '\0';
+      }
       Property* p = extractPropertyFromLine(line);
       insertBack(list, p); // Insert the property into the list
     } else {
-      if (line) {
-        free(line);
-      }
+      safelyFreeString(line);
       return INV_CAL;
     }
   }
 
-  if (line) {
-    free(line);
-  }
+  safelyFreeString(line);
 
   return OK;
 }
@@ -188,6 +187,12 @@ ErrorCode readLinesIntoList(FILE* file, List* list, int bufferSize) {
 ErrorCode freeAndReturn(List* list, ErrorCode e) {
   clearList(list);
   return e;
+}
+
+void deleteProperty(List* propList, char* line) {
+  Property* p = extractPropertyFromLine(line);
+  safelyFreeString(deleteDataFromList(propList, p));
+  free(p);
 }
 
 /**
@@ -204,12 +209,13 @@ int checkEnclosingTags(List* iCalLines) {
     return 0; // If we couldnt pull off the list
   }
   if (!match(line, "^BEGIN:VCALENDAR$")) { // Check if it is not valid
-    free(line);
+    safelyFreeString(line);
     return 0; // Retrun 0 (false)
   }
-  char* t = deleteDataFromList(iCalLines, getFromFront(*iCalLines)); // Delete the node contaning this line
-  free(t);
-  free(line);
+
+  deleteProperty(iCalLines, line); // Remove the begin tag as it has no meaningful information
+  safelyFreeString(line);
+
   p = getFromBack(*iCalLines);
   if (!p) {
     return 0; // If we couldnt pull off the list
@@ -219,12 +225,11 @@ int checkEnclosingTags(List* iCalLines) {
     return 0; // If we couldnt pull off the list
   }
   if (!match(line, "^END:VCALENDAR$")) { // Check if line is not valid
-    free(line);
+    safelyFreeString(line);
     return 0; // Retrun 0 (false)
   }
-  t = deleteDataFromList(iCalLines, getFromBack(*iCalLines)); // Delete the node contaning this line
-  free(t);
-  free(line);
+  deleteProperty(iCalLines, line); // Remove the end tag as it is no meaningful information anymore
+  safelyFreeString(line);
 
   return 1; // If we got here, return 1 (true)
 }
@@ -233,28 +238,31 @@ ErrorCode extractEventList(List iCalLines, List* eventList) {
   clearList(eventList); // Clear the list just in case
   ListIterator calendarIterator = createIterator(iCalLines);
 
-  char* line;
+  Property* prop;
   // These two ints count as flags to see if we have come across an event open/close
   int beginCount = 0;
   int endCount = 0;
-  while ((line = (char*)nextElement(&calendarIterator)) != NULL) {
+  while ((prop = nextElement(&calendarIterator)) != NULL) {
+    char* line = iCalLines.printData(prop);
     if (match(line, "^BEGIN:VEVENT$")) {
       beginCount ++;
       if (beginCount != 1) {
+        safelyFreeString(line);
         return INV_EVENT; // Opened another event without closing the previous
       }
     } else if (match(line, "^END:VEVENT$")) {
       endCount ++;
       if (endCount != beginCount) {
+        safelyFreeString(line);
         return INV_EVENT; // Closed an event without opening one
       }
+      safelyFreeString(line);
       break; // We have parsed out the event
     } else if (beginCount == 1 && endCount == 0) { // If begin is 'open', add this line to the list
-      int lineSize = strlen(line) * sizeof(char);
-      char* tmp = calloc(lineSize, 1);
-      strncpy(tmp, line, lineSize);
-      insertBack(eventList, tmp);
+      Property* p = extractPropertyFromLine(line);
+      insertBack(eventList, p);
     }
+    safelyFreeString(line);
   }
 
   if (beginCount == 1 && endCount != beginCount) { // If there is no end to the VEVENT
@@ -274,16 +282,27 @@ ErrorCode parseEvent(List* iCalLines, Calendar* calendar) {
     return freeAndReturn(&eventList, e);
   }
 
-  free(deleteDataFromList(iCalLines, "BEGIN:VEVENT")); // Delete this line from the iCalendar line list and free the data
-  free(deleteDataFromList(iCalLines, "END:VEVENT")); // Delete this line from the iCalendar line list and free the data
+  char* out = toString(*iCalLines);
+  printf("%s\n", out);
+  free(out);
+
+  deleteProperty(iCalLines, "BEGIN:VEVENT"); // Remove the begin event tag
+  deleteProperty(iCalLines, "END:VEVENT"); // Remove the end event tag
+
+  out = toString(*iCalLines);
+  printf("%s\n", out);
+  free(out);
 
   ListIterator eventIterator = createIterator(eventList);
 
   char* line;
-  while ((line = (char*)nextElement(&eventIterator)) != NULL) {
+  Property* prop;
+  while ((prop = nextElement(&eventIterator)) != NULL) {
+    line = eventList.printData(prop);
 
 
-    free(deleteDataFromList(iCalLines, line)); // Delete this line from the iCalendar line list and free the data
+    deleteProperty(iCalLines, line); // Delete this line from the iCalendar line list and free the data
+    safelyFreeString(line);
   }
 
   return freeAndReturn(&eventList, OK);
@@ -318,22 +337,22 @@ ErrorCode createCalendar(char* fileName, Calendar** obj) {
   }
   // Property* p = createProperty("BEGIN", sizeof(char)*strlen("BEGIN"), "VCALENDAR", sizeof(char)*strlen("VCALENDAR"));
   // compareProp(getFromFront(iCalPropertyList), getFromFront(iCalPropertyList));
-  char* out = toString(iCalPropertyList);
-  printf("%s\n", out);
-  free(out);
+  // char* out = toString(iCalPropertyList);
+  // printf("%s\n", out);
+  // free(out);
 
   if (!checkEnclosingTags(&iCalPropertyList)) { // Check to see if the enclosing lines are correct
     return freeAndReturn(&iCalPropertyList, INV_CAL); // Return invalid calendar if they are not
   }
 
-  // ErrorCode eventCode = parseEvent(&iCalPropertyList, *obj);
-  // if (eventCode != OK) { // If the event error code is not OK
-  //   return freeAndReturn(&iCalPropertyList, eventCode); // Return the error
-  // }
+  ErrorCode eventCode = parseEvent(&iCalPropertyList, *obj);
+  if (eventCode != OK) { // If the event error code is not OK
+    return freeAndReturn(&iCalPropertyList, eventCode); // Return the error
+  }
 
-  out = toString(iCalPropertyList);
-  printf("%s\n", out);
-  free(out);
+  // char* out = toString(iCalPropertyList);
+  // printf("%s\n", out);
+  // free(out);
 
   return freeAndReturn(&iCalPropertyList, OK); // All good, return OK
 }

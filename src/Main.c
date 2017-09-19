@@ -2,33 +2,6 @@
 
 #include "../include/CalendarParser.h"
 
-// Property* createProperty(char* propName, size_t nameSize, char propDescr[], size_t descrSize) {
-//   size_t size = sizeof(Property) + descrSize*sizeof(char*) + nameSize;
-//   Property* p = malloc(size);
-//   strcpy(p->propName, propName);
-//   strcpy(p->propDescr, propDescr);
-//   return p;
-// }
-
-char* getLast(char* line) {
-  if (!line) { // If the line is NULL return null
-    return NULL;
-  }
-
-  int colonIndex = strcspn(line, ":");
-  size_t lineLength = strlen(line);
-
-  if (colonIndex == lineLength) { // If there is no colon or the length is 0
-    return NULL;
-  }
-
-  char* description = malloc(colonIndex * sizeof(char) + 1); // Allocate that much room and add 1 for null terminator
-  strncpy(description, &line[0], colonIndex); // Copy 'size' chars into description starting from the index of ":" + 1
-  description[colonIndex] = '\0'; // Add null terminator because strncpy wont
-
-  return description;
-}
-
 int main(int argc, char const *argv[]) {
 // char* c = getLast(NULL);
 // printf("%s\n", c);

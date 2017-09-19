@@ -92,43 +92,43 @@ void deleteFunc(void *toBeDeleted){
 	free(p);
 }
 
-char* extractPropertyName(char* line) {
+char* extractSubstringBefore(char* line, char* terminator) {
 
-  if (!line) { // If the line is NULL return null
+  if (!line || !terminator) { // If the line is NULL return null
     return NULL;
   }
 
-  int colonIndex = strcspn(line, ":");
+  int terminatorIndex = strcspn(line, terminator);
   size_t lineLength = strlen(line);
 
-  if (colonIndex == lineLength) { // If there is no colon or the length is 0
+  if (terminatorIndex == lineLength) { // If there is no colon or the length is 0
     return NULL;
   }
 
-  char* name = malloc(colonIndex * sizeof(char) + 1); // Allocate that much room and add 1 for null terminator
-  strncpy(name, &line[0], colonIndex); // Copy 'size' chars into description starting from the index of ":" + 1
-  name[colonIndex] = '\0'; // Add null terminator because strncpy wont
+  char* substring = malloc(terminatorIndex * sizeof(char) + 1); // Allocate that much room and add 1 for null terminator
+  strncpy(substring, &line[0], terminatorIndex); // Copy 'size' chars into description starting from the index of ":" + 1
+  substring[terminatorIndex] = '\0'; // Add null terminator because strncpy wont
 
-  return name;
+  return substring;
 }
 
-char* extractPropertyDescription(char* line) {
-  if (!line) { // If the line is NULL return null
+char* extractSubstringAfter(char* line, char* terminator) {
+  if (!line || !terminator) { // If the line is NULL return null
     return NULL;
   }
 
-  int colonIndex = strcspn(line, ":");
+  int terminatorIndex = strcspn(line, terminator);
   size_t lineLength = strlen(line);
 
-  if (colonIndex == lineLength) { // If there is no colon or the length is 0
+  if (terminatorIndex == lineLength) { // If there is no terminator or the length is 0
     return NULL;
   }
 
-  size_t size = lineLength - (colonIndex + 1); // Calculate the number of chars in the final (+1 on colon asto not include the colon)
-  char* description = malloc(size * sizeof(char) + 1); // Allocate that much room and add 1 for null terminator
-  strncpy(description, &line[colonIndex + 1], size); // Copy 'size' chars into description starting from the index of ":" + 1
-  description[size] = '\0'; // Add null terminator because strncpy wont
-  return description;
+  size_t size = lineLength - (terminatorIndex + 1); // Calculate the number of chars in the final (+1 on terminator as to not include the colon)
+  char* substring = malloc(size * sizeof(char) + 1); // Allocate that much room and add 1 for null terminator
+  strncpy(substring, &line[terminatorIndex + 1], size); // Copy 'size' chars into description starting from the index of ":" + 1
+  substring[size] = '\0'; // Add null terminator because strncpy wont
+  return substring;
 }
 
 Property* createProperty(char* propName, char* propDescr) {
@@ -139,8 +139,8 @@ Property* createProperty(char* propName, char* propDescr) {
 }
 
 Property* extractPropertyFromLine(char* line) {
-  char* propName = extractPropertyName(line);
-  char* propDescr = extractPropertyDescription(line);
+  char* propName = extractSubstringBefore(line, ":");
+  char* propDescr = extractSubstringAfter(line, ":");
   Property* p = createProperty(propName, propDescr);
   safelyFreeString(propName);
   safelyFreeString(propDescr);
@@ -272,40 +272,107 @@ ErrorCode extractEventList(List iCalLines, List* eventList) {
   return OK; // If we made it here, we have extracted the eventList
 }
 
+ErrorCode createTime(Event* event, char* timeString) {
+  if (!timeString || !event || !match(timeString, "^[0-9]{8}T[0-9]{6}Z{0,1}$")) {
+    return INV_CREATEDT;
+  }
+  char* numberDate = extractSubstringBefore(timeString, "T");
+  char* timeS;
+  char* temp = extractSubstringAfter(timeString, "T");
+  if (match(timeString, "Z$")) { // If UTC
+    timeS = extractSubstringBefore(temp, "Z"); // Get the time between the T and Z
+    event->creationDateTime.UTC = true;
+    safelyFreeString(temp); // Free temp
+  } else {
+    timeS = temp; // Get the time after T
+    event->creationDateTime.UTC = false;
+  }
+  if (!numberDate || !temp || !timeS) {
+    return INV_CREATEDT;
+  }
+  strcpy(event->creationDateTime.date, numberDate);
+  strcpy(event->creationDateTime.time, timeS);
+  safelyFreeString(numberDate);
+  safelyFreeString(timeS);
+  return OK;
+}
+
+ErrorCode createEvent(List* eventList, Event* event) {
+  if (!event) {
+    return INV_EVENT;
+  }
+  ListIterator eventIterator = createIterator(*eventList);
+  Property* prop;
+  char* UID = NULL;
+  char* DTSTAMP = NULL;
+  while ((prop = nextElement(&eventIterator)) != NULL) {
+    char* propName = prop->propName;
+    char* propDescr = prop->propDescr;
+    if (match(propName, "^UID$")) {
+      if (UID != NULL || !propDescr || !strlen(propDescr)) {
+        return INV_EVENT; // UID has already been assigned or propDesc is null or empty
+      }
+      UID = eventList->printData(prop);
+      strcpy(event->UID, prop->propDescr);
+    } else if (match(propName, "^DTSTAMP$")) {
+      if (DTSTAMP != NULL || !propDescr || !strlen(propDescr)) {
+        return INV_EVENT; // DTSTAMP has already been assigned or propDesc is null or empty
+      }
+      DTSTAMP = eventList->printData(prop); // Set the DTSTAMP flag
+      ErrorCode e = createTime(event, propDescr);
+      if (e != OK) {
+        return e;
+      }
+    }
+  }
+
+  if (!UID || !DTSTAMP) { // If wecould not find UID or DTSTAMP
+    return INV_EVENT;
+  }
+
+  deleteProperty(eventList, UID); // Delete UID from event properties
+  deleteProperty(eventList, DTSTAMP); // Delete DTSTAMP from event properties
+  safelyFreeString(UID); // Free stored UID
+  safelyFreeString(DTSTAMP); // Free stored DTSTAMP
+
+  event->properties = *eventList;
+
+  return OK;
+}
+
+void removeIntersectionOfLists(List* l1, List l2) {
+  ListIterator eventIterator = createIterator(l2);
+  char* line;
+  Property* prop;
+  while ((prop = nextElement(&eventIterator)) != NULL) {
+    line = l1->printData(prop);
+    deleteProperty(l1, line); // Delete this line from the iCalendar line list and free the data
+    safelyFreeString(line);
+  }
+}
+
 ErrorCode parseEvent(List* iCalLines, Calendar* calendar) {
 
   // List that will store the lines between the VEVENT open and close tags
   List eventList = initializeList(&printProp, &deleteFunc, &compareProp);
 
-  ErrorCode e = extractEventList(*iCalLines, &eventList);
-  if (e != OK) {
-    return freeAndReturn(&eventList, e);
+  ErrorCode errorCode = extractEventList(*iCalLines, &eventList);
+  if (errorCode != OK) {
+    return freeAndReturn(&eventList, errorCode);
   }
-
-  char* out = toString(*iCalLines);
-  printf("%s\n", out);
-  free(out);
 
   deleteProperty(iCalLines, "BEGIN:VEVENT"); // Remove the begin event tag
   deleteProperty(iCalLines, "END:VEVENT"); // Remove the end event tag
+  removeIntersectionOfLists(iCalLines, eventList); // Removes all properties from iCalLines that are in eventList
 
-  out = toString(*iCalLines);
-  printf("%s\n", out);
-  free(out);
-
-  ListIterator eventIterator = createIterator(eventList);
-
-  char* line;
-  Property* prop;
-  while ((prop = nextElement(&eventIterator)) != NULL) {
-    line = eventList.printData(prop);
-
-
-    deleteProperty(iCalLines, line); // Delete this line from the iCalendar line list and free the data
-    safelyFreeString(line);
+  Event* event = malloc(sizeof(Event));
+  errorCode = createEvent(&eventList, event);
+  if (errorCode != OK) {
+    free(event);
+    return freeAndReturn(&eventList, errorCode);
   }
-
-  return freeAndReturn(&eventList, OK);
+  calendar->event = event;
+  return OK;
 }
 
 /** Function to create a Calendar object based on the contents of an iCalendar file.
@@ -369,9 +436,15 @@ void deleteCalendar(Calendar* obj) {
     return; // No need to be freed if the object is NULL
   }
 
-  /*
-    TODO: make a function to delete an event
-  */
+  Event* event = obj->event;
+  if (event) {
+    List* props = &event->properties;
+    if (props) {
+      clearList(props);
+    }
+    // TODO: delete internal lists
+    free(event);
+  }
 
   free(obj);
 }

@@ -272,13 +272,22 @@ Property* extractPropertyFromLine(char* line) {
   *@return: list
   * The list with each line read into it
 */
-ErrorCode readLinesIntoList(FILE* file, List* list, int bufferSize) {
+ErrorCode readLinesIntoList(char* fileName, List* list, int bufferSize) {
+  FILE* file; // Going to be used to store the file
+
+  // If the fileName is NULL or does not match the regex expression *.ics or cannot be opened
+  if (!fileName || !match(fileName, ".+\\.ics") || (file = fopen(fileName, "r")) == NULL) {
+    return INV_FILE; // The file is invalid
+  }
 
   char * line = NULL;
   size_t len = 0;
   ssize_t read;
 
   while ((read = getline(&line, &len, file)) != -1) {
+    if (match(line, "^;")) {
+      continue; // This is a line comment
+    }
     if (match(line, "^[A-Z]+(:|;).*$")) {
       if (line[strlen(line) - 1] == '\n') { // Remove new line from end of line
         line[strlen(line) - 1] = '\0';
@@ -292,7 +301,7 @@ ErrorCode readLinesIntoList(FILE* file, List* list, int bufferSize) {
   }
 
   safelyFreeString(line);
-
+  fclose(file);
   return OK;
 }
 
@@ -536,25 +545,13 @@ ErrorCode parseEvent(List* iCalLines, Calendar* calendar) {
  *@param a double pointer to a Calendar struct that needs to be allocated
 **/
 ErrorCode createCalendar(char* fileName, Calendar** obj) {
-  FILE* iCalFile; // Going to be used to store the file
-
-  // If the fileName is NULL or does not match the regex expression *.ics or cannot be opened
-  if (!fileName || !match(fileName, ".+\\.ics") || !(iCalFile = fopen(fileName, "r"))) {
-    return INV_FILE; // The file is invalid
-  }
 
   List iCalPropertyList = initializeList(&printProp, &deletePropertyFunction, &compareProp);
-  ErrorCode lineCheckError = readLinesIntoList(iCalFile, &iCalPropertyList, 512); // Read the lines of the file into a list of properties
-  fclose(iCalFile); // Close the file since we are done with it
+  ErrorCode lineCheckError = readLinesIntoList(fileName, &iCalPropertyList, 512); // Read the lines of the file into a list of properties
 
   if (lineCheckError != OK) { // If any of the lines were invalid, this will not return OK
     return freeAndReturn(&iCalPropertyList, lineCheckError);
   }
-  // Property* p = createProperty("BEGIN", sizeof(char)*strlen("BEGIN"), "VCALENDAR", sizeof(char)*strlen("VCALENDAR"));
-  // compareProp(getFromFront(iCalPropertyList), getFromFront(iCalPropertyList));
-  // char* out = toString(iCalPropertyList);
-  // printf("%s\n", out);
-  // free(out);
 
   if (!checkEnclosingTags(&iCalPropertyList)) { // Check to see if the enclosing lines are correct
     return freeAndReturn(&iCalPropertyList, INV_CAL); // Return invalid calendar if they are not
@@ -564,10 +561,6 @@ ErrorCode createCalendar(char* fileName, Calendar** obj) {
   if (eventCode != OK) { // If the event error code is not OK
     return freeAndReturn(&iCalPropertyList, eventCode); // Return the error
   }
-
-  // char* out = toString(iCalPropertyList);
-  // printf("%s\n", out);
-  // free(out);
 
   return freeAndReturn(&iCalPropertyList, OK); // All good, return OK
 }

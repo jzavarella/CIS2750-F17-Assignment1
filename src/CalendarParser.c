@@ -254,8 +254,14 @@ char* extractSubstringAfter(char* line, char* terminator) {
 }
 
 Property* extractPropertyFromLine(char* line) {
-  char* propName = extractSubstringBefore(line, ":");
-  char* propDescr = extractSubstringAfter(line, ":");
+  char* propName = NULL;
+  char* propDescr = NULL;
+  propName = extractSubstringBefore(line, ":");
+  propDescr = extractSubstringAfter(line, ":");
+  if (!propName || !propDescr) {
+    propName = extractSubstringBefore(line, ";");
+    propDescr = extractSubstringAfter(line, ";");
+  }
   Property* p = createProperty(propName, propDescr);
   safelyFreeString(propName);
   safelyFreeString(propDescr);
@@ -552,7 +558,7 @@ ErrorCode createCalendar(char* fileName, Calendar** obj) {
   if (lineCheckError != OK) { // If any of the lines were invalid, this will not return OK
     return freeAndReturn(&iCalPropertyList, lineCheckError);
   }
-
+  
   if (!checkEnclosingTags(&iCalPropertyList)) { // Check to see if the enclosing lines are correct
     return freeAndReturn(&iCalPropertyList, INV_CAL); // Return invalid calendar if they are not
   }

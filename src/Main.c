@@ -19,6 +19,8 @@ int main(int argc, char const *argv[]) {
   printf("%s\n", printError(createCalendar("cal.ics", &c)));
   deleteCalendar(c);
 
+  // test("VCALENDAR");
+
   // FILE * fp;
   // char * line = NULL;
   // size_t len = 0;

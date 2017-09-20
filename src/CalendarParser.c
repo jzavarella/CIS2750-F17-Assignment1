@@ -38,11 +38,6 @@ int match(const char* string, char* pattern) {
   return(1);
 }
 
-/**
-  *Checks to see if a string is allocated before freeing it
-  *This function is used to save space
-  TODO: REPLAE ALL STATEMENTS
-*/
 void safelyFreeString(char* c) {
   if (c) {
     free(c);
@@ -83,13 +78,140 @@ int compareProp(const void *first, const void *second){
 	return result;
 }
 
+char* printAlarm(void *toBePrinted) {
+  Alarm* a = (Alarm*) toBePrinted;
+  size_t finalSize = 0;
+  char c;
+  size_t i = 0;
+  while ((c = a->action[i]) != '\0') {
+    i ++;
+  }
+  finalSize += i;
+  i = 0;
+  while ((c = a->trigger[i]) != '\0') {
+    i ++;
+  }
+  finalSize += i;
+  finalSize += 4; // Add room for "|"
+  char* propListString = toString(a->properties);
+  // printf("%s\n", propListString);
+  i = 0;
+  while ((c = propListString[i]) != '\0') {
+    i ++;
+  }
+  finalSize += i;
+  char* string = malloc(finalSize + 1); // +1 to make room for NULL terminator
+  strcpy(string, "|");
+  strcat(string, a->action);
+  strcat(string, "|");
+  strcat(string, a->trigger);
+  strcat(string, "|");
+  strcat(string, propListString);
+  strcat(string, "|");
+  string[finalSize] = '\0'; // Set null terminator just in case strcat didnt
+  safelyFreeString(propListString);
+  return string;
+}
+
+//Comparing strings is done by strcmp
+int compareAlarm(const void *first, const void *second){
+  char* s1 = printProp((void*)first);
+  char* s2 = printProp((void*)second);
+  int result = strcmp(s1, s2);
+
+  safelyFreeString(s1);
+  safelyFreeString(s2);
+	return result;
+}
+
 //Freeing a string is also straightforward
-void deleteFunc(void *toBeDeleted){
+void deleteAlarmFunction(void *toBeDeleted){
+  Alarm* a = (Alarm*) toBeDeleted;
+  if (!a) {
+    return; // Cant free nothing
+  }
+  if (a->trigger) {
+    free(a->trigger);
+  }
+  clearList(&a->properties);
+	free(a);
+}
+
+//Freeing a string is also straightforward
+void deletePropertyFunction(void *toBeDeleted){
   Property* p = (Property*) toBeDeleted;
   if (!p) {
     return; // Cant free nothing
   }
 	free(p);
+}
+
+Property* createProperty(char* propName, char* propDescr) {
+  Property* p = malloc(sizeof(Property) + strlen(propDescr)*sizeof(char*) + strlen(propName)); // Allocate room for the property and the flexible array member
+  strcpy(p->propName, propName);
+  strcpy(p->propDescr, propDescr);
+  return p;
+}
+
+Alarm* createAlarm(char* action, char* trigger, List properties) {
+  if (!action || !trigger) {
+    return NULL;
+  }
+  Alarm* alarm = malloc(sizeof(Alarm));
+  strcpy(alarm->action, action);
+  alarm->trigger = malloc(strlen(trigger) + 1);
+
+  if (!alarm->trigger) {
+    free(alarm);
+    return NULL;
+  }
+
+  strcpy(alarm->trigger, trigger);
+  alarm->properties = properties;
+
+  return alarm;
+}
+
+Alarm* createAlarmFromPropList(List props) {
+  List alarmProps = initializeList(&printProp, &deletePropertyFunction, &compareProp);
+  ListIterator propsIterator = createIterator(props);
+
+  char* ACTION = NULL;
+  char* TRIGGER = NULL;
+
+  Property* prop;
+  while ((prop = nextElement(&propsIterator)) != NULL) {
+    char* propName = prop->propName;
+    char* propDescr = prop->propDescr;
+    if (match(propName, "ACTION")) {
+      if (ACTION || !propDescr || !match(propDescr, "^(AUDIO|DISPLAY|EMAIL)$")) {
+        clearList(&alarmProps);
+        return NULL; // Already have an ACTION or description is null
+      }
+      ACTION = propDescr;
+    } else if (match(propName, "^TRIGGER$")) {
+      if (TRIGGER || !propDescr) {
+        clearList(&alarmProps);
+        return NULL; // Already have trigger or description is null
+      } else {
+        TRIGGER = propDescr;
+      }
+    } else if (match(propName, "^REPEAT$")) {
+      if (!match(propDescr, "^[0-9]+$")) {
+        clearList(&alarmProps);
+        return NULL; // Repeat must be an integer
+      }
+      Property* p = createProperty(propName, propDescr);
+      insertBack(&alarmProps, p);
+    }
+  }
+
+  if (!ACTION || !TRIGGER) {
+    return NULL;
+  }
+
+  Alarm* a = createAlarm(ACTION, TRIGGER, alarmProps);
+  return a;
 }
 
 char* extractSubstringBefore(char* line, char* terminator) {
@@ -131,13 +253,6 @@ char* extractSubstringAfter(char* line, char* terminator) {
   return substring;
 }
 
-Property* createProperty(char* propName, char* propDescr) {
-  Property* p = malloc(sizeof(Property) + strlen(propDescr)*sizeof(char*) + strlen(propName)); // Allocate room for the property and the flexible array member
-  strcpy(p->propName, propName);
-  strcpy(p->propDescr, propDescr);
-  return p;
-}
-
 Property* extractPropertyFromLine(char* line) {
   char* propName = extractSubstringBefore(line, ":");
   char* propDescr = extractSubstringAfter(line, ":");
@@ -164,7 +279,7 @@ ErrorCode readLinesIntoList(FILE* file, List* list, int bufferSize) {
   ssize_t read;
 
   while ((read = getline(&line, &len, file)) != -1) {
-    if (match(line, "^[A-Z]+:.*$")) {
+    if (match(line, "^[A-Z]+(:|;).*$")) {
       if (line[strlen(line) - 1] == '\n') { // Remove new line from end of line
         line[strlen(line) - 1] = '\0';
       }
@@ -234,39 +349,52 @@ int checkEnclosingTags(List* iCalLines) {
   return 1; // If we got here, return 1 (true)
 }
 
-ErrorCode extractEventList(List iCalLines, List* eventList) {
-  clearList(eventList); // Clear the list just in case
-  ListIterator calendarIterator = createIterator(iCalLines);
+ErrorCode extractBetweenTags(List props, List* extracted, ErrorCode onFailError, char* tag) {
+  clearList(extracted); // Clear the list just in case
+  ListIterator propsIterator = createIterator(props);
+
+  size_t tagSize = strlen(tag);
+  size_t beginTagSize = (strlen("^BEGIN:$") + tagSize) * sizeof(char);
+  char beginTag[beginTagSize];
+  strcpy(beginTag, "^BEGIN:");
+  strcat(beginTag, tag);
+  strcat(beginTag, "$");
+
+  size_t endTagSize = (strlen("^END:$") + tagSize) * sizeof(char);
+  char endTag[endTagSize];
+  strcpy(endTag, "^END:");
+  strcat(endTag, tag);
+  strcat(endTag, "$");
 
   Property* prop;
   // These two ints count as flags to see if we have come across an event open/close
   int beginCount = 0;
   int endCount = 0;
-  while ((prop = nextElement(&calendarIterator)) != NULL) {
-    char* line = iCalLines.printData(prop);
-    if (match(line, "^BEGIN:VEVENT$")) {
+  while ((prop = nextElement(&propsIterator)) != NULL) {
+    char* line = props.printData(prop);
+    if (match(line, beginTag)) {
       beginCount ++;
       if (beginCount != 1) {
         safelyFreeString(line);
-        return INV_EVENT; // Opened another event without closing the previous
+        return onFailError; // Opened another event without closing the previous
       }
-    } else if (match(line, "^END:VEVENT$")) {
+    } else if (match(line, endTag)) {
       endCount ++;
       if (endCount != beginCount) {
         safelyFreeString(line);
-        return INV_EVENT; // Closed an event without opening one
+        return onFailError; // Closed an event without opening one
       }
       safelyFreeString(line);
       break; // We have parsed out the event
     } else if (beginCount == 1 && endCount == 0) { // If begin is 'open', add this line to the list
       Property* p = extractPropertyFromLine(line);
-      insertBack(eventList, p);
+      insertBack(extracted, p);
     }
     safelyFreeString(line);
   }
 
   if (beginCount == 1 && endCount != beginCount) { // If there is no end to the VEVENT
-    return INV_EVENT;
+    return onFailError;
   }
 
   return OK; // If we made it here, we have extracted the eventList
@@ -295,6 +423,17 @@ ErrorCode createTime(Event* event, char* timeString) {
   safelyFreeString(numberDate);
   safelyFreeString(timeS);
   return OK;
+}
+
+void removeIntersectionOfLists(List* l1, List l2) {
+  ListIterator eventIterator = createIterator(l2);
+  char* line;
+  Property* prop;
+  while ((prop = nextElement(&eventIterator)) != NULL) {
+    line = l1->printData(prop);
+    deleteProperty(l1, line); // Delete this line from the iCalendar line list and free the data
+    safelyFreeString(line);
+  }
 }
 
 ErrorCode createEvent(List* eventList, Event* event) {
@@ -335,28 +474,37 @@ ErrorCode createEvent(List* eventList, Event* event) {
   safelyFreeString(UID); // Free stored UID
   safelyFreeString(DTSTAMP); // Free stored DTSTAMP
 
+  List alarmPropList = initializeList(&printProp, &deletePropertyFunction, &compareProp);
+  ErrorCode e = extractBetweenTags(*eventList, &alarmPropList, INV_EVENT, "VALARM");
+  if (e != OK) {
+    return freeAndReturn(&alarmPropList, e);
+  }
+
+  Alarm* a = createAlarmFromPropList(alarmPropList);
+  if (!a) {
+    return freeAndReturn(&alarmPropList, INV_EVENT);
+  }
+  List alarmList = initializeList(&printAlarm, &deleteAlarmFunction, &compareAlarm);
+  insertBack(&alarmList, a);
+
+  removeIntersectionOfLists(eventList, alarmPropList);
+  deleteProperty(eventList, "BEGIN:VALARM");
+  deleteProperty(eventList, "END:VALARM");
+
+  clearList(&alarmPropList);
+
+  event->alarms = alarmList;
   event->properties = *eventList;
 
   return OK;
 }
 
-void removeIntersectionOfLists(List* l1, List l2) {
-  ListIterator eventIterator = createIterator(l2);
-  char* line;
-  Property* prop;
-  while ((prop = nextElement(&eventIterator)) != NULL) {
-    line = l1->printData(prop);
-    deleteProperty(l1, line); // Delete this line from the iCalendar line list and free the data
-    safelyFreeString(line);
-  }
-}
-
 ErrorCode parseEvent(List* iCalLines, Calendar* calendar) {
 
   // List that will store the lines between the VEVENT open and close tags
-  List eventList = initializeList(&printProp, &deleteFunc, &compareProp);
+  List eventList = initializeList(&printProp, &deletePropertyFunction, &compareProp);
 
-  ErrorCode errorCode = extractEventList(*iCalLines, &eventList);
+  ErrorCode errorCode = extractBetweenTags(*iCalLines, &eventList, INV_EVENT, "VEVENT");
   if (errorCode != OK) {
     return freeAndReturn(&eventList, errorCode);
   }
@@ -395,7 +543,7 @@ ErrorCode createCalendar(char* fileName, Calendar** obj) {
     return INV_FILE; // The file is invalid
   }
 
-  List iCalPropertyList = initializeList(&printProp, &deleteFunc, &compareProp);
+  List iCalPropertyList = initializeList(&printProp, &deletePropertyFunction, &compareProp);
   ErrorCode lineCheckError = readLinesIntoList(iCalFile, &iCalPropertyList, 512); // Read the lines of the file into a list of properties
   fclose(iCalFile); // Close the file since we are done with it
 
@@ -442,7 +590,10 @@ void deleteCalendar(Calendar* obj) {
     if (props) {
       clearList(props);
     }
-    // TODO: delete internal lists
+    List* alarms = &event->alarms;
+    if (alarms) {
+      clearList(alarms);
+    }
     free(event);
   }
 

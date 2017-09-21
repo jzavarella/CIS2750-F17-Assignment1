@@ -58,10 +58,8 @@ char* printProp(void *toBePrinted) {
     i ++;
   }
   finalSize += i;
-  finalSize += 1; // Add room for ":"
   char* string = malloc(finalSize + 1); // +1 to make room for NULL terminator
   strcpy(string, p->propName);
-  strcat(string, ":");
   strcat(string, p->propDescr);
   string[finalSize] = '\0'; // Set null terminator just in case strcat didnt
   return string;
@@ -197,7 +195,7 @@ Alarm* createAlarmFromPropList(List props) {
         TRIGGER = propDescr;
       }
     } else if (match(propName, "^REPEAT$")) {
-      if (!match(propDescr, "^[0-9]+$")) {
+      if (!match(propDescr, "^[[:digit:]]+$")) {
         clearList(&alarmProps);
         return NULL; // Repeat must be an integer
       }
@@ -255,16 +253,19 @@ char* extractSubstringAfter(char* line, char* terminator) {
 
 Property* extractPropertyFromLine(char* line) {
   char* propName = NULL;
-  char* propDescr = NULL;
+  char* propDescr = strpbrk(line, ":;");
+  if (!propDescr) {
+    return NULL;
+  }
   propName = extractSubstringBefore(line, ":");
-  propDescr = extractSubstringAfter(line, ":");
-  if (!propName || !propDescr) {
+  if (!propName) {
     propName = extractSubstringBefore(line, ";");
-    propDescr = extractSubstringAfter(line, ";");
+    if (!propName) {
+      return NULL;
+    }
   }
   Property* p = createProperty(propName, propDescr);
   safelyFreeString(propName);
-  safelyFreeString(propDescr);
   return p;
 }
 
@@ -415,12 +416,37 @@ ErrorCode extractBetweenTags(List props, List* extracted, ErrorCode onFailError,
   return OK; // If we made it here, we have extracted the eventList
 }
 
+char* printDatePretty(DateTime dt) {
+  size_t size = 0;
+  size += strlen(dt.date);
+  size += strlen("// ");
+  size += strlen(dt.time);
+  if (dt.UTC) {
+    size += strlen("Z");
+  }
+
+  char* string = malloc(size + 1 * (sizeof(char)));
+  strcpy(string, dt.date);
+  strcat(string, " ");
+  strcat(string, dt.time);
+  if (dt.UTC) {
+    strcat(string, "Z");
+  }
+
+  return string;
+}
+
 ErrorCode createTime(Event* event, char* timeString) {
-  if (!timeString || !event || !match(timeString, "^[0-9]{8}T[0-9]{6}Z{0,1}$")) {
+  if (!timeString || !event || !match(timeString, "^(:|;){0,1}[[:digit:]]{8}T[[:digit:]]{6}Z{0,1}$")) {
     return INV_CREATEDT;
   }
-  char* numberDate = extractSubstringBefore(timeString, "T");
+  char* numberDate;
   char* timeS;
+  if (match(timeString, "^(:|;)")) {
+    numberDate = extractSubstringBefore(&timeString[1], "T");
+  } else {
+    numberDate = extractSubstringBefore(timeString, "T");
+  }
   char* temp = extractSubstringAfter(timeString, "T");
   if (match(timeString, "Z$")) { // If UTC
     timeS = extractSubstringBefore(temp, "Z"); // Get the time between the T and Z
@@ -466,8 +492,15 @@ ErrorCode createEvent(List* eventList, Event* event) {
       if (UID != NULL || !propDescr || !strlen(propDescr)) {
         return INV_EVENT; // UID has already been assigned or propDesc is null or empty
       }
+      if (match(propDescr, "^(;|:)")) {
+        char temp[strlen(propDescr)];
+        memcpy(temp, propDescr + 1*sizeof(char), strlen(propDescr));
+        strcpy(event->UID, temp);
+      } else {
+        strcpy(event->UID, propDescr);
+      }
+
       UID = eventList->printData(prop);
-      strcpy(event->UID, prop->propDescr);
     } else if (match(propName, "^DTSTAMP$")) {
       if (DTSTAMP != NULL || !propDescr || !strlen(propDescr)) {
         return INV_EVENT; // DTSTAMP has already been assigned or propDesc is null or empty
@@ -495,17 +528,17 @@ ErrorCode createEvent(List* eventList, Event* event) {
     return freeAndReturn(&alarmPropList, e);
   }
 
-  Alarm* a = createAlarmFromPropList(alarmPropList);
-  if (!a) {
-    return freeAndReturn(&alarmPropList, INV_EVENT);
-  }
   List alarmList = initializeList(&printAlarm, &deleteAlarmFunction, &compareAlarm);
-  insertBack(&alarmList, a);
+
+  Alarm* a = createAlarmFromPropList(alarmPropList);
+  if (a) {
+    // return freeAndReturn(&alarmPropList, INV_EVENT);
+    deleteProperty(eventList, "BEGIN:VALARM");
+    deleteProperty(eventList, "END:VALARM");
+    insertBack(&alarmList, a);
+  }
 
   removeIntersectionOfLists(eventList, alarmPropList);
-  deleteProperty(eventList, "BEGIN:VALARM");
-  deleteProperty(eventList, "END:VALARM");
-
   clearList(&alarmPropList);
 
   event->alarms = alarmList;
@@ -538,6 +571,57 @@ ErrorCode parseEvent(List* iCalLines, Calendar* calendar) {
   return OK;
 }
 
+ErrorCode parseRequirediCalTags(List* list, Calendar* cal) {
+  ListIterator iterator = createIterator(*list);
+  Property* p;
+  char* VERSION = NULL;
+  char* PRODID = NULL;
+  while ((p = nextElement(&iterator)) != NULL) {
+    char* name = p->propName;
+    char* description = p->propDescr;
+    if (match(name, "^VERSION$")) {
+      if (VERSION) {
+        safelyFreeString(PRODID); // PROD might be allocated so we must remove it before returning
+        safelyFreeString(VERSION); // Version might be allocated so we must remove it before returning
+        return DUP_VER;
+      }
+      if (!description || !match(description, "^(:|;)[[:digit:]]+(\\.[[:digit:]]+)*$")) {
+        safelyFreeString(PRODID); // PROD might be allocated so we must remove it before returning
+        safelyFreeString(VERSION); // Version might be allocated so we must remove it before returning
+        return INV_VER;
+      }
+
+      VERSION = malloc(strlen(description) * sizeof(char));
+      memmove(VERSION, description+1, strlen(description)); // remove the first character as it is (; or :)
+    } else if (match(name, "^PRODID$")) {
+      if (PRODID) {
+        safelyFreeString(PRODID); // PROD might be allocated so we must remove it before returning
+        safelyFreeString(VERSION); // Version might be allocated so we must remove it before returning
+        return DUP_PRODID;
+      }
+      if (!description || !match(description, "^(:|;).+$")) {
+        safelyFreeString(PRODID); // PROD might be allocated so we must remove it before returning
+        safelyFreeString(VERSION); // Version might be allocated so we must remove it before returning
+        return INV_PRODID;
+      }
+      PRODID = malloc(strlen(description) * sizeof(char));
+      memmove(PRODID, description+1, strlen(description)); // remove the first character as it is (; or :)
+    }
+  }
+
+  if (!VERSION || !PRODID) {
+    safelyFreeString(PRODID); // PROD might be allocated so we must remove it before returning
+    safelyFreeString(VERSION); // Version might be allocated so we must remove it before returning
+    return INV_CAL; // We are missing required tags
+  }
+
+  cal->version = atof(VERSION);
+  strcpy(cal->prodID, PRODID);
+  safelyFreeString(PRODID);
+  safelyFreeString(VERSION);
+  return OK;
+}
+
 /** Function to create a Calendar object based on the contents of an iCalendar file.
  *@pre File name cannot be an empty string or NULL.  File name must have the .ics extension.
        File represented by this name must exist and must be readable.
@@ -558,7 +642,7 @@ ErrorCode createCalendar(char* fileName, Calendar** obj) {
   if (lineCheckError != OK) { // If any of the lines were invalid, this will not return OK
     return freeAndReturn(&iCalPropertyList, lineCheckError);
   }
-  
+
   if (!checkEnclosingTags(&iCalPropertyList)) { // Check to see if the enclosing lines are correct
     return freeAndReturn(&iCalPropertyList, INV_CAL); // Return invalid calendar if they are not
   }
@@ -567,6 +651,16 @@ ErrorCode createCalendar(char* fileName, Calendar** obj) {
   if (eventCode != OK) { // If the event error code is not OK
     return freeAndReturn(&iCalPropertyList, eventCode); // Return the error
   }
+
+  // We should only have VERSION and PRODID now
+  ErrorCode iCalIdErrors = parseRequirediCalTags(&iCalPropertyList, *obj); // Place UID and version in the obj
+  if (iCalIdErrors != OK) {
+    return freeAndReturn(&iCalPropertyList, iCalIdErrors);
+  }
+
+  // char* i = toString(iCalPropertyList);
+  // printf("%s\n", i);
+  // free(i);
 
   return freeAndReturn(&iCalPropertyList, OK); // All good, return OK
 }
@@ -599,7 +693,6 @@ void deleteCalendar(Calendar* obj) {
   free(obj);
 }
 
-
 /** Function to create a string representation of a Calendar object.
  *@pre Calendar object exists, is not null, and is valid
  *@post Calendar has not been modified in any way, and a string representing the Calndar contents has been created
@@ -607,8 +700,161 @@ void deleteCalendar(Calendar* obj) {
  *@param obj - a pointer to a Calendar struct
 **/
 char* printCalendar(const Calendar* obj) {
+  if (!obj) {
+    return NULL;
+  }
+  char* string;
+  size_t stringSize = 0;
+  size_t lineLength = 0;
+  size_t longestLine = 0;
 
-  return NULL;
+  // PRODUCT ID: Something\n
+  if (strlen(obj->prodID) != 0) {
+    return NULL;
+  }
+  lineLength += strlen(" PRODUCT ID: \n");
+  lineLength += strlen(obj->prodID);
+
+  if (lineLength > longestLine) {
+    longestLine = lineLength;
+  }
+  stringSize += lineLength;
+  lineLength = 0;
+
+  // VERSION: 2.0\n
+  if (!obj->version) {
+    return NULL;
+  }
+  char vString[snprintf(NULL, 0, "%f", obj->version) + 1];
+  snprintf(vString, sizeof(vString) + 1, "%f", obj->version);
+  lineLength += strlen(" VERSION: \n"); // VERSION:
+  lineLength += strlen(vString); // 2.0
+
+  if (lineLength > longestLine) {
+    longestLine = lineLength;
+  }
+  stringSize += lineLength;
+  lineLength = 0;
+
+  stringSize += 1; // newline
+
+  if (obj->event) {
+    Event* event = obj->event;
+    lineLength += strlen(" CALENDAR EVENT: \n");
+    if (lineLength > longestLine) {
+      longestLine = lineLength;
+    }
+    stringSize += lineLength;
+    lineLength = 0;
+
+    // UID: some uid\n
+    if (strlen(event->UID) == 0) {
+      return NULL;
+    }
+    lineLength += strlen("  UID: \n");
+    lineLength += strlen(event->UID);
+    if (lineLength > longestLine) {
+      longestLine = lineLength;
+    }
+    stringSize += lineLength;
+    lineLength = 0;
+
+    // CREATION TIMESTAMP: some time\n
+    char* dtString = printDatePretty(event->creationDateTime);
+    lineLength += strlen("  CREATION TIMESTAMP: \n");
+    lineLength += strlen(dtString);
+    safelyFreeString(dtString);
+    if (lineLength > longestLine) {
+      longestLine = lineLength;
+    }
+    stringSize += lineLength;
+    lineLength = 0;
+
+    List propsList = event->properties;
+    if (propsList.head) {
+      lineLength += strlen("  EVENT PROPERTIES: \n");
+      if (lineLength > longestLine) {
+        longestLine = lineLength;
+      }
+      stringSize += lineLength;
+      lineLength = 0;
+
+      // Get length of each property
+      ListIterator propsIter = createIterator(propsList);
+      Property* p;
+
+      while ((p = nextElement(&propsIter)) != NULL) {
+        char* printedProp = printProp(p);
+        lineLength += strlen(printedProp);
+        lineLength += strlen("   \n"); // Make room for tabs and new line
+        if (lineLength > longestLine) {
+          longestLine = lineLength;
+        }
+        stringSize += lineLength;
+        lineLength = 0;
+
+        safelyFreeString(printedProp);
+      }
+    }
+  }
+
+  longestLine += 1;
+  char cap[longestLine];
+  for (size_t i = 0; i < longestLine - 1; i++) {
+    cap[i] = '-';
+  }
+  cap[longestLine - 1] = '\n';
+  cap[longestLine] = '\0';
+  string = malloc(stringSize * sizeof(char) + (2 * longestLine) + 1);
+
+
+  strcpy(string, cap); // Header
+  // PRODUCT ID: Something\n
+  strcat(string, " PRODUCT ID: ");
+  strcat(string, obj->prodID);
+  strcat(string, "\n");
+  // VERSION: 2.0\n
+  strcat(string, " VERSION: ");
+  strcat(string, vString);
+  strcat(string, "\n");
+  // newline
+  strcat(string, "\n");
+  // CALENDAR EVENT:\n
+  if (obj->event) {
+    Event* event = obj->event;
+    strcat(string, " CALENDAR EVENT: \n");
+    // UID: some uid\n
+    strcat(string, "  UID: ");
+    strcat(string, event->UID);
+    strcat(string, "\n");
+    // CREATION TIMESTAMP: some time\n
+    char* dtString = printDatePretty(event->creationDateTime);
+    strcat(string, "  CREATION TIMESTAMP: ");
+    strcat(string, dtString);
+    strcat(string, "\n");
+    safelyFreeString(dtString);
+    // EVENT PROPERTIES: \n
+    List propsList = event->properties;
+    if (propsList.head) {
+      strcat(string, "  EVENT PROPERTIES: \n");
+
+      // print each property
+      ListIterator propsIter = createIterator(propsList);
+      Property* p;
+
+      while ((p = nextElement(&propsIter)) != NULL) {
+        char* printedProp = printProp(p);
+        strcat(string, "   ");
+        strcat(string, printedProp);
+        strcat(string, "\n");
+        safelyFreeString(printedProp);
+      }
+    }
+  }
+
+  strcat(string, cap); // Footer
+
+  return string;
 }
 
 

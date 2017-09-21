@@ -114,8 +114,7 @@ void insertBack(List *list, void *toBeAdded) {
  *@return pointer to the data located at the head of the list
  **/
 void* getFromFront(List list) {
-  // return (list) ? list->head->data : NULL; // If the list doesnt exist, return NULL
-  return list.head->data;
+  return ((list.head) != NULL) ? list.head->data : NULL; // If the list doesnt exist, return NULL
 }
 
 /**Returns a pointer to the data at the back of the list. Does not alter list structure.
@@ -124,8 +123,7 @@ void* getFromFront(List list) {
  *@return pointer to the data located at the tail of the list
  **/
 void* getFromBack(List list) {
-  // return (list) ? list->tail->data : NULL; // If the list doesnt exist, return NULL
-  return list.tail->data;
+  return ((list.tail) != NULL) ? list.tail->data : NULL; // If the list doesnt exist, return NULL
 }
 
 /** Clears the contents linked list, freeing all memory asspociated with these contents.
@@ -245,7 +243,11 @@ char* toString(List list) {
   void* element; // Variable to store the data
 
   while ((element = nextElement(&iter)) != NULL) {
-    numChars += strlen(list.printData(element)); //Add the number of chars for the string representation of this data
+    char* elementString = list.printData(element);
+    numChars += strlen(elementString); //Add the number of chars for the string representation of this data
+    if (elementString) {
+      free(elementString);
+    }
     numChars += strlen("<-->"); //Add the number of chars for the arrow symbol inbetween the nodes
   }
   numChars += strlen("TAIL"); //Allocate memory for the TAIL identifier
@@ -259,7 +261,11 @@ char* toString(List list) {
 
   iter = createIterator(list); // Make a new iterator to loop over the list again
   while ((element = nextElement(&iter)) != NULL) {
-    strcat(string, list.printData(element)); //Concatenate the string representation of this data
+    char* elementString = list.printData(element);
+    strcat(string, elementString); //Concatenate the string representation of this data
+    if (elementString) {
+      free(elementString);
+    }
     strcat(string, "<-->"); //Concatenate the link identifier
   }
   strcat(string, "TAIL"); //Concatenate the TAIL identifier

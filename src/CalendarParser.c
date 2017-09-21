@@ -709,7 +709,7 @@ char* printCalendar(const Calendar* obj) {
   size_t longestLine = 0;
 
   // PRODUCT ID: Something\n
-  if (strlen(obj->prodID) != 0) {
+  if (strlen(obj->prodID) == 0) {
     return NULL;
   }
   lineLength += strlen(" PRODUCT ID: \n");

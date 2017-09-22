@@ -12,12 +12,46 @@
 #include "../include/CalendarParser.h"
 #include "../include/HelperFunctions.h"
 
+List copyPropList(List toBeCopied) {
+  List newList = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
+  ListIterator iter = createIterator(toBeCopied);
+  Property* p;
 
-ErrorCode createEvent(List* eventList, Event* event) {
+  while ((p = nextElement(&iter)) != NULL) {
+    char* c = toBeCopied.printData(p);
+    Property* p = extractPropertyFromLine(c);
+    insertBack(&newList, p);
+    safelyFreeString(c);
+  }
+  return newList;
+}
+
+ErrorCode createEvent(List eventList, Event* event) {
   if (!event) {
     return INV_EVENT;
   }
-  ListIterator eventIterator = createIterator(*eventList);
+
+  List alarmPropList = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
+  ErrorCode alarmPropListError = extractBetweenTags(eventList, &alarmPropList, INV_EVENT, "VALARM");
+  // printf("Alarm error: %s\n", printError(alarmPropListError));
+  // printList(alarmPropList);
+
+  List newEventList = copyPropList(eventList);
+  // List alarmList = initializeList(&printAlarmListFunction, &deleteAlarmListFunction, &compareAlarmListFunction);
+  Alarm* a = createAlarmFromPropList(alarmPropList);
+  if (a) {
+    List l = a->properties;
+    // printList(l);
+    // insertBack(&alarmList, a);
+    insertBack(&event->alarms, a);
+    removeIntersectionOfLists(&newEventList, alarmPropList);
+    deleteProperty(&newEventList, "BEGIN:VALARM"); // Delete UID from event properties
+    deleteProperty(&newEventList, "END:VALARM"); // Delete DTSTAMP from event properties
+  } else {
+    // printf("%s\n", "Alarm is null");
+  }
+
+  ListIterator eventIterator = createIterator(newEventList);
   Property* prop;
   char* UID = NULL;
   char* DTSTAMP = NULL;
@@ -26,6 +60,8 @@ ErrorCode createEvent(List* eventList, Event* event) {
     char* propDescr = prop->propDescr;
     if (match(propName, "^UID$")) {
       if (UID != NULL || !propDescr || !strlen(propDescr)) {
+        safelyFreeString(UID);
+        safelyFreeString(DTSTAMP);
         return INV_EVENT; // UID has already been assigned or propDesc is null or empty
       }
       if (match(propDescr, "^(;|:)")) {
@@ -36,12 +72,14 @@ ErrorCode createEvent(List* eventList, Event* event) {
         strcpy(event->UID, propDescr);
       }
 
-      UID = eventList->printData(prop);
+      UID = eventList.printData(prop);
     } else if (match(propName, "^DTSTAMP$")) {
       if (DTSTAMP != NULL || !propDescr || !strlen(propDescr)) {
+        safelyFreeString(UID);
+        safelyFreeString(DTSTAMP);
         return INV_EVENT; // DTSTAMP has already been assigned or propDesc is null or empty
       }
-      DTSTAMP = eventList->printData(prop); // Set the DTSTAMP flag
+      DTSTAMP = eventList.printData(prop); // Set the DTSTAMP flag
       ErrorCode e = createTime(event, propDescr);
       if (e != OK) {
         return e;
@@ -53,59 +91,61 @@ ErrorCode createEvent(List* eventList, Event* event) {
     return INV_EVENT;
   }
 
-  deleteProperty(eventList, UID); // Delete UID from event properties
-  deleteProperty(eventList, DTSTAMP); // Delete DTSTAMP from event properties
+  deleteProperty(&newEventList, UID); // Delete UID from event properties
+  deleteProperty(&newEventList, DTSTAMP); // Delete DTSTAMP from event properties
   safelyFreeString(UID); // Free stored UID
   safelyFreeString(DTSTAMP); // Free stored DTSTAMP
+  // printList(newEventList);
+  // printList(alarmList);
 
-  List alarmPropList = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
-  ErrorCode e = extractBetweenTags(*eventList, &alarmPropList, INV_EVENT, "VALARM");
-  if (e != OK) {
-    return freeAndReturn(&alarmPropList, e);
-  }
-
-  List alarmList = initializeList(&printAlarmListFunction, &deleteAlarmListFunction, &compareAlarmListFunction);
-
-  Alarm* a = createAlarmFromPropList(alarmPropList);
-  if (a) {
-    // return freeAndReturn(&alarmPropList, INV_EVENT);
-    deleteProperty(eventList, "BEGIN:VALARM");
-    deleteProperty(eventList, "END:VALARM");
-    insertBack(&alarmList, a);
-  }
-
-  removeIntersectionOfLists(eventList, alarmPropList);
+  // List alarmPropList = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
+  // ErrorCode e = extractBetweenTags(eventList, &alarmPropList, INV_EVENT, "VALARM");
+  // if (e != OK) {
+  //   return freeAndReturn(&alarmPropList, e);
+  // }
+  //
+  // List alarmList = initializeList(&printAlarmListFunction, &deleteAlarmListFunction, &compareAlarmListFunction);
+  // //
+  // Alarm* a = createAlarmFromPropList(alarmPropList);
+  // if (a) {
+  //   // return freeAndReturn(&alarmPropList, INV_EVENT);
+  //   deleteProperty(&eventList, "BEGIN:VALARM");
+  //   deleteProperty(&eventList, "END:VALARM");
+  //   insertBack(&alarmList, a);
+  // }
+  //
+  // removeIntersectionOfLists(&eventList, alarmPropList);
   clearList(&alarmPropList);
 
-  event->alarms = alarmList;
-  event->properties = *eventList;
+  // event->alarms = alarmList;
+  event->properties = newEventList;
 
   return OK;
 }
 
-ErrorCode parseEvent(List* iCalLines, Calendar* calendar) {
-
-  // List that will store the lines between the VEVENT open and close tags
-  List eventList = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
-
-  ErrorCode errorCode = extractBetweenTags(*iCalLines, &eventList, INV_EVENT, "VEVENT");
-  if (errorCode != OK) {
-    return freeAndReturn(&eventList, errorCode);
-  }
-
-  deleteProperty(iCalLines, "BEGIN:VEVENT"); // Remove the begin event tag
-  deleteProperty(iCalLines, "END:VEVENT"); // Remove the end event tag
-  removeIntersectionOfLists(iCalLines, eventList); // Removes all properties from iCalLines that are in eventList
-
-  Event* event = malloc(sizeof(Event));
-  errorCode = createEvent(&eventList, event);
-  if (errorCode != OK) {
-    free(event);
-    return freeAndReturn(&eventList, errorCode);
-  }
-  calendar->event = event;
-  return OK;
-}
+// ErrorCode parseEvent(List* iCalLines, Calendar* calendar) {
+//
+//   // List that will store the lines between the VEVENT open and close tags
+//   List eventList = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
+//
+//   ErrorCode errorCode = extractBetweenTags(*iCalLines, &eventList, INV_EVENT, "VEVENT");
+//   if (errorCode != OK) {
+//     return freeAndReturn(&eventList, errorCode);
+//   }
+//
+//   deleteProperty(iCalLines, "BEGIN:VEVENT"); // Remove the begin event tag
+//   deleteProperty(iCalLines, "END:VEVENT"); // Remove the end event tag
+//   removeIntersectionOfLists(iCalLines, eventList); // Removes all properties from iCalLines that are in eventList
+//
+//   Event* event = malloc(sizeof(Event));
+//   errorCode = createEvent(&eventList, event);
+//   if (errorCode != OK) {
+//     free(event);
+//     return freeAndReturn(&eventList, errorCode);
+//   }
+//   calendar->event = event;
+//   return OK;
+// }
 
 ErrorCode parseRequirediCalTags(List* list, Calendar* cal) {
   ListIterator iterator = createIterator(*list);
@@ -158,6 +198,13 @@ ErrorCode parseRequirediCalTags(List* list, Calendar* cal) {
   return OK;
 }
 
+void freeEvent(Event* event) {
+  if (!event) {
+    return; // Nothing to see here folks
+  }
+  clearList(&event->properties);
+}
+
 /** Function to create a Calendar object based on the contents of an iCalendar file.
  *@pre File name cannot be an empty string or NULL.  File name must have the .ics extension.
        File represented by this name must exist and must be readable.
@@ -171,34 +218,63 @@ ErrorCode parseRequirediCalTags(List* list, Calendar* cal) {
  *@param a double pointer to a Calendar struct that needs to be allocated
 **/
 ErrorCode createCalendar(char* fileName, Calendar** obj) {
+  Calendar* calendar = *obj;
 
+  Event* event = newEmptyEvent();
+  calendar->event = event;
   List iCalPropertyList = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
   ErrorCode lineCheckError = readLinesIntoList(fileName, &iCalPropertyList, 512); // Read the lines of the file into a list of properties
 
   if (lineCheckError != OK) { // If any of the lines were invalid, this will not return OK
-    return freeAndReturn(&iCalPropertyList, lineCheckError);
+    clearList(&iCalPropertyList);
+    return lineCheckError;
   }
 
-  if (!checkEnclosingTags(&iCalPropertyList)) { // Check to see if the enclosing lines are correct
-    return freeAndReturn(&iCalPropertyList, INV_CAL); // Return invalid calendar if they are not
+  List betweenVCalendarTags = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
+
+  ErrorCode betweenVCalendarTagsError = extractBetweenTags(iCalPropertyList, &betweenVCalendarTags, INV_CAL, "VCALENDAR");
+  if (betweenVCalendarTagsError != OK) {
+    clearList(&iCalPropertyList);
+    clearList(&betweenVCalendarTags);
+    return betweenVCalendarTagsError;
   }
 
-  ErrorCode eventCode = parseEvent(&iCalPropertyList, *obj);
-  if (eventCode != OK) { // If the event error code is not OK
-    return freeAndReturn(&iCalPropertyList, eventCode); // Return the error
+  List betweenVEventTags = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
+
+  ErrorCode betweenVEventTagsError = extractBetweenTags(betweenVCalendarTags, &betweenVEventTags, INV_EVENT, "VEVENT");
+  if (betweenVEventTagsError != OK) {
+    clearList(&iCalPropertyList);
+    clearList(&betweenVCalendarTags);
+    clearList(&betweenVEventTags);
+    return betweenVEventTagsError;
   }
 
-  // We should only have VERSION and PRODID now
-  ErrorCode iCalIdErrors = parseRequirediCalTags(&iCalPropertyList, *obj); // Place UID and version in the obj
+  ErrorCode eventError = createEvent(betweenVEventTags, event);
+  if (eventError != OK) {
+    clearList(&iCalPropertyList);
+    clearList(&betweenVCalendarTags);
+    clearList(&betweenVEventTags);
+    return eventError;
+  }
+
+  removeIntersectionOfLists(&betweenVCalendarTags, betweenVEventTags);
+  deleteProperty(&betweenVCalendarTags, "BEGIN:VEVENT");
+  deleteProperty(&betweenVCalendarTags, "END:VEVENT");
+
+  // // We should only have VERSION and PRODID now
+  ErrorCode iCalIdErrors = parseRequirediCalTags(&betweenVCalendarTags, *obj); // Place UID and version in the obj
   if (iCalIdErrors != OK) {
-    return freeAndReturn(&iCalPropertyList, iCalIdErrors);
+    clearList(&iCalPropertyList);
+    clearList(&betweenVCalendarTags);
+    clearList(&betweenVEventTags);
+    return iCalIdErrors;
   }
 
-  // char* i = toString(iCalPropertyList);
-  // printf("%s\n", i);
-  // free(i);
 
-  return freeAndReturn(&iCalPropertyList, OK); // All good, return OK
+  clearList(&iCalPropertyList);
+  clearList(&betweenVCalendarTags);
+  clearList(&betweenVEventTags);
+  return OK;
 }
 
 
@@ -214,8 +290,9 @@ void deleteCalendar(Calendar* obj) {
   }
 
   Event* event = obj->event;
-  if (event) {
+  if (event != NULL) {
     List* props = &event->properties;
+    // printf("%p\n", props->head);
     if (props) {
       clearList(props);
     }

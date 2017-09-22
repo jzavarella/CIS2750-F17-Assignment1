@@ -154,24 +154,34 @@ Alarm* createAlarmFromPropList(List props) {
   while ((prop = nextElement(&propsIterator)) != NULL) {
     char* propName = prop->propName;
     char* propDescr = prop->propDescr;
-    if (match(propName, "ACTION")) {
-      if (ACTION || !propDescr || !match(propDescr, "^(AUDIO|DISPLAY|EMAIL)$")) {
+    if (!propDescr) {
+      clearList(&alarmProps);
+      return NULL;
+    }
+    char tempDescription[strlen(propDescr) + 2];
+    strcpy(tempDescription, propDescr);
+    memmove(tempDescription, tempDescription+1, strlen(tempDescription)); // remove the first character as it is (; or :)
+    if (match(propName, "^ACTION")) {
+      if (ACTION || !match(tempDescription, "^(AUDIO|DISPLAY|EMAIL)$")) {
         clearList(&alarmProps);
         return NULL; // Already have an ACTION or description is null
       }
       ACTION = propDescr;
     } else if (match(propName, "^TRIGGER$")) {
-      if (TRIGGER || !propDescr) {
+      if (TRIGGER) {
         clearList(&alarmProps);
         return NULL; // Already have trigger or description is null
       } else {
         TRIGGER = propDescr;
       }
     } else if (match(propName, "^REPEAT$")) {
-      if (!match(propDescr, "^[[:digit:]]+$")) {
+      if (!match(tempDescription, "^[[:digit:]]+$")) {
         clearList(&alarmProps);
         return NULL; // Repeat must be an integer
       }
+      Property* p = createProperty(propName, propDescr);
+      insertBack(&alarmProps, p);
+    } else {
       Property* p = createProperty(propName, propDescr);
       insertBack(&alarmProps, p);
     }
@@ -257,7 +267,7 @@ ErrorCode readLinesIntoList(char* fileName, List* list, int bufferSize) {
   FILE* file; // Going to be used to store the file
 
   // If the fileName is NULL or does not match the regex expression *.ics or cannot be opened
-  if (!fileName || !match(fileName, ".+\\.ics") || (file = fopen(fileName, "r")) == NULL) {
+  if (!fileName || !match(fileName, ".+\\.ics$") || (file = fopen(fileName, "r")) == NULL) {
     return INV_FILE; // The file is invalid
   }
 
@@ -269,7 +279,32 @@ ErrorCode readLinesIntoList(char* fileName, List* list, int bufferSize) {
     if (match(line, "^;")) {
       continue; // This is a line comment
     }
-    if (match(line, "^[A-Z]+(:|;).*$")) {
+    if (match(line, "^[[:blank:]]+.+")) { // if this line starts with a space or tab and isnt blank
+      Node* tailNode = list->tail;
+      if (!tailNode) {
+        fclose(file);
+        return INV_CAL; // This is the first line in the list and the first line cannot be a line continuation
+      }
+
+      Property* p = (Property*) tailNode->data;
+      if (!p) {
+        fclose(file);
+        return INV_CAL; // Something has gone wrong if the data is null
+      }
+
+      if (line[strlen(line) - 1] == '\n') { // Remove new line from end of line
+        line[strlen(line) - 1] = '\0';
+      }
+      memmove(line, line + 1, strlen(line)); // Shift the contents of the string right by one as to not include the space
+      size_t currentSize = sizeof(*p) + strlen(p->propDescr)*sizeof(char); // Calculatethe current size of the property
+      size_t newSize = currentSize + strlen(line)*sizeof(char); // Calculate how much memory we need for the new property
+      tailNode->data = realloc(p, newSize + 1); // Reallocate memory for the new property
+      p = (Property*) tailNode->data;
+      strcat(p->propDescr, line); // Concat this line onto the property description
+
+      continue; // Continue to the next line
+    }
+    if (match(line, "^[[:alpha:]]+(:|;).*$")) {
       if (line[strlen(line) - 1] == '\n') { // Remove new line from end of line
         line[strlen(line) - 1] = '\0';
       }
@@ -277,12 +312,17 @@ ErrorCode readLinesIntoList(char* fileName, List* list, int bufferSize) {
       insertBack(list, p); // Insert the property into the list
     } else {
       safelyFreeString(line);
+      fclose(file);
       return INV_CAL;
     }
   }
 
   safelyFreeString(line);
   fclose(file);
+
+  if (!list->head) {
+    return INV_CAL; // If the file was empty
+  }
   return OK;
 }
 
@@ -449,4 +489,17 @@ void removeIntersectionOfLists(List* l1, List l2) {
     deleteProperty(l1, line); // Delete this line from the iCalendar line list and free the data
     safelyFreeString(line);
   }
+}
+
+void printList(List list) {
+  char* i = toString(list);
+  printf("%s\n\n", i);
+  free(i);
+}
+
+Event* newEmptyEvent() {
+  Event* e = malloc(sizeof(Event));
+  e->properties = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
+  e->alarms = initializeList(&printAlarmListFunction, &deleteAlarmListFunction, &compareAlarmListFunction);
+  return e;
 }

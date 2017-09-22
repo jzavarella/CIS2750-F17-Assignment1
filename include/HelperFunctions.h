@@ -56,3 +56,4 @@ ErrorCode createTime(Event* event, char* timeString);
 void removeIntersectionOfLists(List* l1, List l2);
 
 void printList(List list);
+Event* newEmptyEvent();

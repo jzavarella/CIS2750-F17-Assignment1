@@ -282,11 +282,13 @@ ErrorCode readLinesIntoList(char* fileName, List* list, int bufferSize) {
     if (match(line, "^[[:blank:]]+.+")) { // if this line starts with a space or tab and isnt blank
       Node* tailNode = list->tail;
       if (!tailNode) {
+        fclose(file);
         return INV_CAL; // This is the first line in the list and the first line cannot be a line continuation
       }
 
       Property* p = (Property*) tailNode->data;
       if (!p) {
+        fclose(file);
         return INV_CAL; // Something has gone wrong if the data is null
       }
 
@@ -310,12 +312,17 @@ ErrorCode readLinesIntoList(char* fileName, List* list, int bufferSize) {
       insertBack(list, p); // Insert the property into the list
     } else {
       safelyFreeString(line);
+      fclose(file);
       return INV_CAL;
     }
   }
 
   safelyFreeString(line);
   fclose(file);
+
+  if (!list->head) {
+    return INV_CAL; // If the file was empty
+  }
   return OK;
 }
 
@@ -488,4 +495,11 @@ void printList(List list) {
   char* i = toString(list);
   printf("%s\n\n", i);
   free(i);
+}
+
+Event* newEmptyEvent() {
+  Event* e = malloc(sizeof(Event));
+  e->properties = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
+  e->alarms = initializeList(&printAlarmListFunction, &deleteAlarmListFunction, &compareAlarmListFunction);
+  return e;
 }

@@ -33,21 +33,22 @@ ErrorCode createEvent(List eventList, Event* event) {
 
   List alarmPropList = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
   ErrorCode alarmPropListError = extractBetweenTags(eventList, &alarmPropList, INV_EVENT, "VALARM");
-  printf("Alarm error: %s\n", printError(alarmPropListError));
-  printList(alarmPropList);
+  // printf("Alarm error: %s\n", printError(alarmPropListError));
+  // printList(alarmPropList);
 
   List newEventList = copyPropList(eventList);
-  List alarmList = initializeList(&printAlarmListFunction, &deleteAlarmListFunction, &compareAlarmListFunction);
+  // List alarmList = initializeList(&printAlarmListFunction, &deleteAlarmListFunction, &compareAlarmListFunction);
   Alarm* a = createAlarmFromPropList(alarmPropList);
   if (a) {
     List l = a->properties;
-    printList(l);
-    insertBack(&alarmList, a);
+    // printList(l);
+    // insertBack(&alarmList, a);
+    insertBack(&event->alarms, a);
     removeIntersectionOfLists(&newEventList, alarmPropList);
     deleteProperty(&newEventList, "BEGIN:VALARM"); // Delete UID from event properties
     deleteProperty(&newEventList, "END:VALARM"); // Delete DTSTAMP from event properties
   } else {
-    printf("%s\n", "Alarm is null");
+    // printf("%s\n", "Alarm is null");
   }
 
   ListIterator eventIterator = createIterator(newEventList);
@@ -116,7 +117,7 @@ ErrorCode createEvent(List eventList, Event* event) {
   // removeIntersectionOfLists(&eventList, alarmPropList);
   clearList(&alarmPropList);
 
-  event->alarms = alarmList;
+  // event->alarms = alarmList;
   event->properties = newEventList;
 
   return OK;
@@ -217,7 +218,10 @@ void freeEvent(Event* event) {
  *@param a double pointer to a Calendar struct that needs to be allocated
 **/
 ErrorCode createCalendar(char* fileName, Calendar** obj) {
+  Calendar* calendar = *obj;
 
+  Event* event = newEmptyEvent();
+  calendar->event = event;
   List iCalPropertyList = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
   ErrorCode lineCheckError = readLinesIntoList(fileName, &iCalPropertyList, 512); // Read the lines of the file into a list of properties
 
@@ -241,42 +245,29 @@ ErrorCode createCalendar(char* fileName, Calendar** obj) {
   if (betweenVEventTagsError != OK) {
     clearList(&iCalPropertyList);
     clearList(&betweenVCalendarTags);
+    clearList(&betweenVEventTags);
     return betweenVEventTagsError;
   }
 
-  Event* event = malloc(sizeof(Event));
   ErrorCode eventError = createEvent(betweenVEventTags, event);
   if (eventError != OK) {
     clearList(&iCalPropertyList);
     clearList(&betweenVCalendarTags);
+    clearList(&betweenVEventTags);
     return eventError;
   }
 
-  Calendar* calendar = *obj;
-
-  calendar->event = event;
-
-  // printList(betweenVCalendarTags);
   removeIntersectionOfLists(&betweenVCalendarTags, betweenVEventTags);
   deleteProperty(&betweenVCalendarTags, "BEGIN:VEVENT");
   deleteProperty(&betweenVCalendarTags, "END:VEVENT");
-  // printList(betweenVCalendarTags);
 
-  // printList(event->alarms);
-
-  // if (!checkEnclosingTags(&iCalPropertyList)) { // Check to see if the enclosing lines are correct
-  //   return freeAndReturn(&iCalPropertyList, INV_CAL); // Return invalid calendar if they are not
-  // }
-  //
-  // ErrorCode eventCode = parseEvent(&iCalPropertyList, *obj);
-  // if (eventCode != OK) { // If the event error code is not OK
-  //   return freeAndReturn(&iCalPropertyList, eventCode); // Return the error
-  // }
-  //
   // // We should only have VERSION and PRODID now
   ErrorCode iCalIdErrors = parseRequirediCalTags(&betweenVCalendarTags, *obj); // Place UID and version in the obj
   if (iCalIdErrors != OK) {
-    return freeAndReturn(&iCalPropertyList, iCalIdErrors);
+    clearList(&iCalPropertyList);
+    clearList(&betweenVCalendarTags);
+    clearList(&betweenVEventTags);
+    return iCalIdErrors;
   }
 
 
@@ -301,6 +292,7 @@ void deleteCalendar(Calendar* obj) {
   Event* event = obj->event;
   if (event != NULL) {
     List* props = &event->properties;
+    // printf("%p\n", props->head);
     if (props) {
       clearList(props);
     }

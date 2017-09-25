@@ -1,5 +1,5 @@
 BEGIN:VCALENDAR
-PRODID:Привет мир!
+PRODID:This is an invalid prod id \
 BEGIN:VEVENT
 UID:uid1@example.combae
 DTSTAMP:19970714T170000Z

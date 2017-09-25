@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -std=c99 -g
+CFLAGS = -Wall -std=c11 -g
 LDFLAGS =
 OBJFILES = src/Main.o src/LinkedListAPI.o src/CalendarParser.o src/HelperFunctions.o
 TARGET = iCalendar

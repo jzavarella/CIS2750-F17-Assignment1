@@ -7,8 +7,8 @@
 int match(const char* string, char* pattern) {
   int status;
   regex_t regex;
-
-  if (regcomp(&regex, pattern, REG_EXTENDED|REG_NOSUB) != 0) {
+  int d;
+  if ((d = regcomp(&regex, pattern, REG_EXTENDED|REG_NOSUB)) != 0) {
     return 0;
   }
 
@@ -18,6 +18,10 @@ int match(const char* string, char* pattern) {
     return 0;
   }
   return(1);
+}
+
+int matchTEXTField(const char* propDescription) {
+  return match(propDescription, "^(;|:)[^[:cntrl:]\"\\,:;]+$");
 }
 
 void safelyFreeString(char* c) {
@@ -502,4 +506,10 @@ Event* newEmptyEvent() {
   e->properties = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
   e->alarms = initializeList(&printAlarmListFunction, &deleteAlarmListFunction, &compareAlarmListFunction);
   return e;
+}
+
+void clearManyLists(List** lists, size_t s) {
+  for (size_t i = 0; i < s; i++) {
+    clearList(lists[i]);
+  }
 }

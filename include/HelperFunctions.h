@@ -27,6 +27,7 @@ Alarm* createAlarmFromPropList(List props);
 char* extractSubstringBefore(char* line, char* terminator);
 char* extractSubstringAfter(char* line, char* terminator);
 Property* extractPropertyFromLine(char* line);
+int matchTEXTField(const char* propDescription);
 
 /**
   *Takes a file that has been opened and reads the lines into a linked list of chars*
@@ -57,3 +58,5 @@ void removeIntersectionOfLists(List* l1, List l2);
 
 void printList(List list);
 Event* newEmptyEvent();
+
+void clearManyLists(List** lists, size_t s);

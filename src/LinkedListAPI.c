@@ -204,6 +204,9 @@ void insertSorted(List *list, void *toBeAdded) {
  *@return on success: void * pointer to data  on failure: NULL
  **/
 void* deleteDataFromList(List *list, void *toBeDeleted) {
+  if (!toBeDeleted) {
+    return NULL;
+  }
   Node* currentNode = list->head; //Iterate over the nodes starting from the head
   while (currentNode != NULL) {
     Node* nextNode = currentNode->next; //Store the next node incase the current node must be freed

@@ -13,6 +13,13 @@ TRIGGER:t
 REPEAT:5
 someProp:anotehr frikin prop
 END:VALARM
+BEGIN:VALARM
+ACTION:AUDIO
+TRIGGER:t
+;com
+REPEAT:5
+someProp:anotehr frikin prop
+END:VALARM
 SUMMARY:Bastille Day Party
 END:VEVENT
 VERSION:2.0

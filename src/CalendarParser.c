@@ -62,6 +62,7 @@ ErrorCode createEvent(List eventList, Event* event) {
       if (UID != NULL || !propDescr || !strlen(propDescr)) {
         safelyFreeString(UID);
         safelyFreeString(DTSTAMP);
+        clearList(&newEventList);
         return INV_EVENT; // UID has already been assigned or propDesc is null or empty
       }
       if (match(propDescr, "^(;|:)")) {
@@ -77,17 +78,24 @@ ErrorCode createEvent(List eventList, Event* event) {
       if (DTSTAMP != NULL || !propDescr || !strlen(propDescr)) {
         safelyFreeString(UID);
         safelyFreeString(DTSTAMP);
+        clearList(&newEventList);
         return INV_EVENT; // DTSTAMP has already been assigned or propDesc is null or empty
       }
       DTSTAMP = eventList.printData(prop); // Set the DTSTAMP flag
       ErrorCode e = createTime(event, propDescr);
       if (e != OK) {
+        safelyFreeString(UID); // Free stored UID
+        safelyFreeString(DTSTAMP); // Free stored DTSTAMP
+        clearList(&newEventList);
         return e;
       }
     }
   }
 
   if (!UID || !DTSTAMP) { // If wecould not find UID or DTSTAMP
+    safelyFreeString(UID); // Free stored UID
+    safelyFreeString(DTSTAMP); // Free stored DTSTAMP
+    clearList(&newEventList);
     return INV_EVENT;
   }
 
@@ -115,10 +123,11 @@ ErrorCode createEvent(List eventList, Event* event) {
   // }
   //
   // removeIntersectionOfLists(&eventList, alarmPropList);
+
+  event->properties = newEventList;
   clearList(&alarmPropList);
 
   // event->alarms = alarmList;
-  event->properties = newEventList;
 
   return OK;
 }
@@ -155,6 +164,7 @@ ErrorCode parseRequirediCalTags(List* list, Calendar* cal) {
   while ((p = nextElement(&iterator)) != NULL) {
     char* name = p->propName;
     char* description = p->propDescr;
+
     if (match(name, "^VERSION$")) {
       if (VERSION) {
         safelyFreeString(PRODID); // PROD might be allocated so we must remove it before returning
@@ -175,7 +185,8 @@ ErrorCode parseRequirediCalTags(List* list, Calendar* cal) {
         safelyFreeString(VERSION); // Version might be allocated so we must remove it before returning
         return DUP_PRODID;
       }
-      if (!description || !match(description, "^(:|;).+$")) {
+
+      if (!description || !matchTEXTField(description)) {
         safelyFreeString(PRODID); // PROD might be allocated so we must remove it before returning
         safelyFreeString(VERSION); // Version might be allocated so we must remove it before returning
         return INV_PRODID;
@@ -219,6 +230,7 @@ void freeEvent(Event* event) {
 **/
 ErrorCode createCalendar(char* fileName, Calendar** obj) {
   Calendar* calendar = *obj;
+  strcpy(calendar->prodID, ""); // Ensure that this field is not blank to prevent uninitialized conditinoal jump errors in valgrind
 
   Event* event = newEmptyEvent();
   calendar->event = event;
@@ -242,6 +254,15 @@ ErrorCode createCalendar(char* fileName, Calendar** obj) {
   List betweenVEventTags = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
 
   ErrorCode betweenVEventTagsError = extractBetweenTags(betweenVCalendarTags, &betweenVEventTags, INV_EVENT, "VEVENT");
+  // Check to see if there is an event at all
+  if (!betweenVEventTags.head || !betweenVEventTags.tail) {
+    // clearManyLists([&iCalPropertyList, &betweenVCalendarTags, &betweenVEventTags], 3);
+    clearList(&iCalPropertyList);
+    clearList(&betweenVCalendarTags);
+    clearList(&betweenVEventTags);
+    return INV_CAL; // If there is no event, then the calendar is invalid
+  }
+  // If there is an event, check the event error
   if (betweenVEventTagsError != OK) {
     clearList(&iCalPropertyList);
     clearList(&betweenVCalendarTags);

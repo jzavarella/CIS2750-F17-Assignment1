@@ -10,7 +10,6 @@
 #include <stdio.h>
 #include <string.h>
 #include "CalendarParser.h"
-// #include "../include/HelperFunctions.h"
 
 // Print function for property list
 char* printPropertyListFunction(void *toBePrinted);
@@ -573,7 +572,6 @@ const char* printError(ErrorCode err) {
 
 
 // <------START OF HELPER FUNCTIONS----->
-#include "../include/HelperFunctions.h"
 
 /** Function to match the given string to the regex expression
   Returns 1 if the string matches the pattern is a match

@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-#include "../include/CalendarParser.h"
+#include "CalendarParser.h"
 void test(char* fileName, ErrorCode expectedResult);
 
 int main(int argc, char const *argv[]) {

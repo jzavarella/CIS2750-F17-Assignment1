@@ -2,3 +2,5 @@
 iCalendar
 .DS_Store
 iCalendar.dsYM/
+tests/no_permissions.ics
+bin/

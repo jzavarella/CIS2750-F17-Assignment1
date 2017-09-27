@@ -555,31 +555,21 @@ char* printCalendar(const Calendar* obj) {
 
   strcpy(string, cap); // Header
 
-  concatenateLine(string, " PRODUCT ID: ", obj->prodID, "\n", NULL);
-
   // PRODUCT ID: Something\n
-  // strcat(string, " PRODUCT ID: ");
-  // strcat(string, obj->prodID);
-  // strcat(string, "\n");
+  concatenateLine(string, " PRODUCT ID: ", obj->prodID, "\n", NULL);
   // VERSION: 2.0\n
-  strcat(string, " VERSION: ");
-  strcat(string, vString);
-  strcat(string, "\n");
+  concatenateLine(string, " VERSION: ", vString, "\n", NULL);
   // newline
-  strcat(string, "\n");
+  concatenateLine(string, "\n", NULL);
   // CALENDAR EVENT:\n
   if (obj->event) {
     Event* event = obj->event;
-    strcat(string, " CALENDAR EVENT: \n");
+    concatenateLine(string, " CALENDAR EVENT: \n", NULL);
     // UID: some uid\n
-    strcat(string, "  UID: ");
-    strcat(string, event->UID);
-    strcat(string, "\n");
+    concatenateLine(string, "   UID: ", event->UID, "\n", NULL);
     // CREATION TIMESTAMP: some time\n
     char* dtString = printDatePretty(event->creationDateTime);
-    strcat(string, "  CREATION TIMESTAMP: ");
-    strcat(string, dtString);
-    strcat(string, "\n");
+    concatenateLine(string, "  CREATION TIMESTAMP: ", dtString, "\n", NULL);
     safelyFreeString(dtString);
 
     List alarms = event->alarms;
@@ -588,29 +578,23 @@ char* printCalendar(const Calendar* obj) {
 
       Alarm* a;
       while ((a = nextElement(&alarmIterator)) != NULL) { // Loop through each alarm
-        strcat(string, "  ALARM: \n");
-        strcat(string, "    ACTION: ");
-        strcat(string, a->action);
-        strcat(string, "\n");
-        strcat(string, "    TRIGGER: ");
-        strcat(string, a->trigger);
-        strcat(string, "\n");
+        concatenateLine(string, "  ALARM: \n", NULL); // Alarm header
+        concatenateLine(string, "    ACTION: ", a->action, "\n", NULL); // Alarm action
+        concatenateLine(string, "    TRIGGER: ", a->trigger, "\n", NULL); // Alarm trigger
 
         List alarmProps = a->properties;
         // Output the props
         if (alarmProps.head) {
-          strcat(string, "    ALARM PROPERTIES: \n");
+          concatenateLine(string, "    ALARM PROPERTIES: \n", NULL); // Alarm properties header
 
-          // Get length of each property
+          // Get each property string
           ListIterator propsIter = createIterator(alarmProps);
           Property* p;
 
           while ((p = nextElement(&propsIter)) != NULL) {
             char* printedProp = printPropertyListFunction(p);
-            strcat(string, "      ");
-            strcat(string, printedProp);
-            strcat(string, "\n");
-            safelyFreeString(printedProp);
+            concatenateLine(string, "      ", printedProp, "\n", NULL); // Alarm properties
+            safelyFreeString(printedProp); // Free the string
           }
         }
       }
@@ -619,7 +603,7 @@ char* printCalendar(const Calendar* obj) {
     // EVENT PROPERTIES: \n
     List propsList = event->properties;
     if (propsList.head) {
-      strcat(string, "  EVENT PROPERTIES: \n");
+      concatenateLine(string, "  EVENT PROPERTIES: \n", NULL); // Event properties header
 
       // print each property
       ListIterator propsIter = createIterator(propsList);
@@ -627,9 +611,7 @@ char* printCalendar(const Calendar* obj) {
 
       while ((p = nextElement(&propsIter)) != NULL) {
         char* printedProp = printPropertyListFunction(p);
-        strcat(string, "   ");
-        strcat(string, printedProp);
-        strcat(string, "\n");
+        concatenateLine(string, "   ", printedProp, "\n", NULL); // Event properties
         safelyFreeString(printedProp);
       }
     }

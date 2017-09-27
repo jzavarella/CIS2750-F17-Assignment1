@@ -9,6 +9,7 @@
 #include <regex.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdarg.h>
 #include "CalendarParser.h"
 
 // Print function for property list
@@ -391,6 +392,40 @@ void deleteCalendar(Calendar* obj) {
   free(obj);
 }
 
+void updateLongestLineAndIncrementStringSize(size_t* longestLine, size_t* lineLength, size_t* stringSize) {
+  if (*lineLength > *longestLine) {
+    *longestLine = *lineLength;
+  }
+  *stringSize += *lineLength;
+  *lineLength = 0;
+}
+
+void calculateLineLength(size_t* lineLength, const char* c, ... ) {
+   va_list valist;
+   va_start(valist, c);
+
+   /* access all the arguments assigned to valist */
+   while (c) {
+        *lineLength += strlen(c);
+        c = va_arg(valist, const char*);
+    }
+   /* clean memory reserved for valist */
+   va_end(valist);
+}
+
+void concatenateLine(char* string, const char* c, ... ) {
+   va_list valist;
+   va_start(valist, c);
+
+   /* access all the arguments assigned to valist */
+   while (c) {
+        strcat(string, c); // concatenate each value onto the string
+        c = va_arg(valist, const char*);
+    }
+   /* clean memory reserved for valist */
+   va_end(valist);
+}
+
 /** Function to create a string representation of a Calendar object.
  *@pre Calendar object exists, is not null, and is valid
  *@post Calendar has not been modified in any way, and a string representing the Calndar contents has been created
@@ -399,74 +434,51 @@ void deleteCalendar(Calendar* obj) {
 **/
 char* printCalendar(const Calendar* obj) {
   if (!obj) {
-    return NULL;
+    return NULL; // If the object does not exist dont do anything
   }
   char* string;
-  size_t stringSize = 0;
-  size_t lineLength = 0;
-  size_t longestLine = 0;
+  size_t stringSize = 0; // Total size of the completed string
+  size_t lineLength = 0; // Size of the current line we are calculating
+  size_t longestLine = 0; // Length of the lonest line
 
   // PRODUCT ID: Something\n
   if (strlen(obj->prodID) == 0) {
-    return NULL;
+    return NULL; // Must have a prodID
   }
-  lineLength += strlen(" PRODUCT ID: \n");
-  lineLength += strlen(obj->prodID);
-
-  if (lineLength > longestLine) {
-    longestLine = lineLength;
-  }
-  stringSize += lineLength;
-  lineLength = 0;
+  calculateLineLength(&lineLength, "  PRODUCT ID: ", obj->prodID, "\n", NULL); // Add the length of these strings to the lineLength
+  updateLongestLineAndIncrementStringSize(&longestLine, &lineLength, &stringSize); // Update the variable that stores the line with the greatest length
 
   // VERSION: 2.0\n
   if (!obj->version) {
-    return NULL;
+    return NULL; // Must have a version
   }
+  // Make room for the version string
   char vString[snprintf(NULL, 0, "%f", obj->version) + 1];
   snprintf(vString, sizeof(vString) + 1, "%f", obj->version);
-  lineLength += strlen(" VERSION: \n"); // VERSION:
-  lineLength += strlen(vString); // 2.0
 
-  if (lineLength > longestLine) {
-    longestLine = lineLength;
-  }
-  stringSize += lineLength;
-  lineLength = 0;
+  calculateLineLength(&lineLength, "  VERSION: ", vString, "\n", NULL); // Add the length of these strings to the lineLength
+  updateLongestLineAndIncrementStringSize(&longestLine, &lineLength, &stringSize); // Update the variable that stores the line with the greatest length
 
   stringSize += 1; // newline
 
   if (obj->event) {
     Event* event = obj->event;
-    lineLength += strlen(" CALENDAR EVENT: \n");
-    if (lineLength > longestLine) {
-      longestLine = lineLength;
-    }
-    stringSize += lineLength;
-    lineLength = 0;
+    calculateLineLength(&lineLength, " CALENDAR EVENT: \n" , NULL); // Add the length of these strings to the lineLength
+    updateLongestLineAndIncrementStringSize(&longestLine, &lineLength, &stringSize); // Update the variable that stores the line with the greatest length
 
     // UID: some uid\n
     if (strlen(event->UID) == 0) {
       return NULL;
     }
-    lineLength += strlen("  UID: \n");
-    lineLength += strlen(event->UID);
-    if (lineLength > longestLine) {
-      longestLine = lineLength;
-    }
-    stringSize += lineLength;
-    lineLength = 0;
+
+    calculateLineLength(&lineLength, "  UID: ", event->UID, "\n" , NULL); // Add the length of these strings to the lineLength
+    updateLongestLineAndIncrementStringSize(&longestLine, &lineLength, &stringSize); // Update the variable that stores the line with the greatest length
 
     // CREATION TIMESTAMP: some time\n
     char* dtString = printDatePretty(event->creationDateTime);
-    lineLength += strlen("  CREATION TIMESTAMP: \n");
-    lineLength += strlen(dtString);
+    calculateLineLength(&lineLength, "  CREATION TIMESTAMP: ", dtString, "\n" , NULL); // Add the length of these strings to the lineLength
     safelyFreeString(dtString);
-    if (lineLength > longestLine) {
-      longestLine = lineLength;
-    }
-    stringSize += lineLength;
-    lineLength = 0;
+    updateLongestLineAndIncrementStringSize(&longestLine, &lineLength, &stringSize); // Update the variable that stores the line with the greatest length
 
     List alarms = event->alarms;
     if (alarms.head) {
@@ -474,62 +486,38 @@ char* printCalendar(const Calendar* obj) {
 
       Alarm* a;
       while ((a = nextElement(&alarmIterator)) != NULL) { // Loop through each alarm
-        lineLength += strlen("  ALARM: \n"); // Add an alarm identifier
-
-        if (lineLength > longestLine) {
-          longestLine = lineLength;
-        }
-        stringSize += lineLength;
-        lineLength = 0;
+        calculateLineLength(&lineLength, "  ALARM: \n" , NULL); // Add the length of these strings to the lineLength
+        updateLongestLineAndIncrementStringSize(&longestLine, &lineLength, &stringSize); // Update the variable that stores the line with the greatest length
 
         if (strlen(a->action) == 0) {
           return NULL; // Action is empty return null
         }
         // Get the length of the Action line
-        lineLength += strlen("    ACTION: \n");
-        lineLength += strlen(a->action);
-        if (lineLength > longestLine) {
-          longestLine = lineLength;
-        }
-        stringSize += lineLength;
-        lineLength = 0;
+        calculateLineLength(&lineLength, "    ACTION: ", a->action, "\n" , NULL); // Add the length of these strings to the lineLength
+        updateLongestLineAndIncrementStringSize(&longestLine, &lineLength, &stringSize); // Update the variable that stores the line with the greatest length
+
         if (strlen(a->trigger) == 0) {
           return NULL; // Action is empty return null
         }
         // Get the length of the Trigger line
-        lineLength += strlen("    TRIGGER: \n");
-        lineLength += strlen(a->trigger);
-        if (lineLength > longestLine) {
-          longestLine = lineLength;
-        }
-        stringSize += lineLength;
-        lineLength = 0;
+        calculateLineLength(&lineLength, "    TRIGGER: ", a->trigger ,"\n" , NULL); // Add the length of these strings to the lineLength
+        updateLongestLineAndIncrementStringSize(&longestLine, &lineLength, &stringSize); // Update the variable that stores the line with the greatest length
 
         List alarmProps = a->properties;
         // Output the props
         if (alarmProps.head) {
-          lineLength += strlen("    ALARM PROPERTIES: \n"); // Make room for tabs and new line
-          if (lineLength > longestLine) {
-            longestLine = lineLength;
-          }
-          stringSize += lineLength;
-          lineLength = 0;
+          calculateLineLength(&lineLength, "    ALARM PROPERTIES: \n" , NULL); // Add the length of these strings to the lineLength
+          updateLongestLineAndIncrementStringSize(&longestLine, &lineLength, &stringSize); // Update the variable that stores the line with the greatest length
 
           // Get length of each property
           ListIterator propsIter = createIterator(alarmProps);
           Property* p;
 
           while ((p = nextElement(&propsIter)) != NULL) {
-            char* printedProp = printPropertyListFunction(p);
-            lineLength += strlen("      \n"); // Make room for tabs and new line
-            lineLength += strlen(printedProp);
-            if (lineLength > longestLine) {
-              longestLine = lineLength;
-            }
-            stringSize += lineLength;
-            lineLength = 0;
-
-            safelyFreeString(printedProp);
+            char* printedProp = printPropertyListFunction(p); // Get the string for this prop
+            calculateLineLength(&lineLength, "      ", printedProp, "\n", NULL); // Add the length of these strings to the lineLength
+            updateLongestLineAndIncrementStringSize(&longestLine, &lineLength, &stringSize); // Update the variable that stores the line with the greatest length
+            safelyFreeString(printedProp); // Free the string
           }
         }
       }
@@ -537,47 +525,42 @@ char* printCalendar(const Calendar* obj) {
 
     List propsList = event->properties;
     if (propsList.head) {
-      lineLength += strlen("  EVENT PROPERTIES: \n");
-      if (lineLength > longestLine) {
-        longestLine = lineLength;
-      }
-      stringSize += lineLength;
-      lineLength = 0;
+
+      calculateLineLength(&lineLength, "    EVENT PROPERTIES: \n", NULL); // Add the length of these strings to the lineLength
+      updateLongestLineAndIncrementStringSize(&longestLine, &lineLength, &stringSize); // Update the variable that stores the line with the greatest length
 
       // Get length of each property
       ListIterator propsIter = createIterator(propsList);
       Property* p;
-
       while ((p = nextElement(&propsIter)) != NULL) {
-        char* printedProp = printPropertyListFunction(p);
-        lineLength += strlen(printedProp);
-        lineLength += strlen("   \n"); // Make room for tabs and new line
-        if (lineLength > longestLine) {
-          longestLine = lineLength;
-        }
-        stringSize += lineLength;
-        lineLength = 0;
-
-        safelyFreeString(printedProp);
+        char* printedProp = printPropertyListFunction(p); // Get the string for this prop
+        calculateLineLength(&lineLength, "    ", printedProp, "\n", NULL); // Add the length of these strings to the lineLength
+        updateLongestLineAndIncrementStringSize(&longestLine, &lineLength, &stringSize); // Update the variable that stores the line with the greatest length
+        safelyFreeString(printedProp); //  Free the string
       }
     }
   }
 
-  longestLine += 1;
+  longestLine += 1; // Make room for null terminator
+
+  //Create the cap and footer of the string representation using by concatonating '-' n times for however long the longest line is
   char cap[longestLine];
   for (size_t i = 0; i < longestLine - 1; i++) {
     cap[i] = '-';
   }
   cap[longestLine - 1] = '\n';
   cap[longestLine] = '\0';
-  string = malloc(stringSize * sizeof(char) + (2 * longestLine) + 1);
 
+  string = malloc(stringSize * sizeof(char) + (2 * longestLine) + 1); // Allocate memory for the completed string
 
   strcpy(string, cap); // Header
+
+  concatenateLine(string, " PRODUCT ID: ", obj->prodID, "\n", NULL);
+
   // PRODUCT ID: Something\n
-  strcat(string, " PRODUCT ID: ");
-  strcat(string, obj->prodID);
-  strcat(string, "\n");
+  // strcat(string, " PRODUCT ID: ");
+  // strcat(string, obj->prodID);
+  // strcat(string, "\n");
   // VERSION: 2.0\n
   strcat(string, " VERSION: ");
   strcat(string, vString);
@@ -632,7 +615,6 @@ char* printCalendar(const Calendar* obj) {
         }
       }
     }
-
 
     // EVENT PROPERTIES: \n
     List propsList = event->properties;

@@ -1,0 +1,26 @@
+begin:VCALENDAR
+prodid:Привет мир!
+begin:VEVENT
+uid:uid1@example.combae
+dtstamp:19970714T170000Z
+organizer:CN=John Doe:MAILTO:john.doe@example.com
+dtstart:19970714T170000Z
+dtend:19970715T035959Z
+begin:VALARM
+action:AUDIO
+trigger:t
+;com
+repeat:5
+someprop:anotehr frikin prop
+end:VALARM
+begin:VALARM
+action:AUDIO
+trigger:two
+;com
+repeat:5
+someprop:anotehr frikin propppp
+end:VALARM
+summary:Bastille Day Party
+end:VEVENT
+version:2.0
+end:VCALENDAR

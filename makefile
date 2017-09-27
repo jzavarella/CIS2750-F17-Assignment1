@@ -21,17 +21,20 @@ all:
 	make parser
 	make main
 
+run:
+	./$(TARGET)
+
 list:
-	$(CC) -c $(LINKEDLISTC) -o $(LISTO)
+	$(CC) $(CFLAGS) -c $(LINKEDLISTC) -o $(LISTO)
 	ar cr $(LIBLIST) $(LISTO)
 
 parser:
-	$(CC) -c $(CALENDARPARSERC) -o  $(CALENDARO) -I $(INCLUDES)
+	$(CC) $(CFLAGS) -c $(CALENDARPARSERC) -o  $(CALENDARO) -I $(INCLUDES)
 	ar cr $(LIBCPARSE) $(CALENDARO)
 
 main:
-	$(CC) $(MAINC) -o $(MAINO) -c -I $(INCLUDES)
-	$(CC) $(MAINO) -o $(TARGET) -Lbin/ $(LIBS)
+	$(CC) $(CFLAGS) $(MAINC) -o $(MAINO) -c -I $(INCLUDES)
+	$(CC) $(CFLAGS) $(MAINO) -o $(TARGET) -Lbin/ $(LIBS)
 
 valgrind:
 	valgrind --leak-check=full ./$(TARGET)

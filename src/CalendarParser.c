@@ -79,25 +79,41 @@ ErrorCode createEvent(List eventList, Event* event) {
     return INV_EVENT;
   }
 
+  // Creating a property list that wil store all of the alarm props
   List alarmPropList = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
-  ErrorCode alarmPropListError = extractBetweenTags(eventList, &alarmPropList, INV_EVENT, "VALARM");
+  // Copy a new event list
+  List newEventList = copyPropList(eventList);
+
+  // While we still have VALARM tags
+  while (extractBetweenTags(newEventList, &alarmPropList, INV_EVENT, "VALARM") != INV_EVENT) {
+    Alarm* a = createAlarmFromPropList(alarmPropList);
+    if (a) {
+      // printf("trigger: %s\n", a->trigger);
+      insertBack(&event->alarms, a);
+      removeIntersectionOfLists(&newEventList, alarmPropList); // Remove all elements from alarmPropList in newEventList
+      deleteProperty(&newEventList, "BEGIN:VALARM");
+      deleteProperty(&newEventList, "END:VALARM");
+    } else {
+      clearList(&newEventList);
+      clearList(&alarmPropList);
+      return INV_EVENT;
+    }
+    clearList(&alarmPropList); // Clear the list
+  }
+  // ErrorCode alarmPropListError = extractBetweenTags(eventList, &alarmPropList, INV_EVENT, "VALARM");
   // printf("Alarm error: %s\n", printError(alarmPropListError));
   // printList(alarmPropList);
 
-  List newEventList = copyPropList(eventList);
   // List alarmList = initializeList(&printAlarmListFunction, &deleteAlarmListFunction, &compareAlarmListFunction);
-  Alarm* a = createAlarmFromPropList(alarmPropList);
-  if (a) {
-    List l = a->properties;
-    // printList(l);
-    // insertBack(&alarmList, a);
-    insertBack(&event->alarms, a);
-    removeIntersectionOfLists(&newEventList, alarmPropList);
-    deleteProperty(&newEventList, "BEGIN:VALARM"); // Delete UID from event properties
-    deleteProperty(&newEventList, "END:VALARM"); // Delete DTSTAMP from event properties
-  } else {
-    // printf("%s\n", "Alarm is null");
-  }
+
+
+  // Alarm* a = createAlarmFromPropList(alarmPropList);
+  // if (a) {
+  //   insertBack(&event->alarms, a);
+  //   removeIntersectionOfLists(&newEventList, alarmPropList);
+  //   deleteProperty(&newEventList, "BEGIN:VALARM"); // Delete UID from event properties
+  //   deleteProperty(&newEventList, "END:VALARM"); // Delete DTSTAMP from event properties
+  // }
 
   ListIterator eventIterator = createIterator(newEventList);
   Property* prop;
@@ -452,6 +468,73 @@ char* printCalendar(const Calendar* obj) {
     stringSize += lineLength;
     lineLength = 0;
 
+    List alarms = event->alarms;
+    if (alarms.head) {
+      ListIterator alarmIterator = createIterator(alarms);
+
+      Alarm* a;
+      while ((a = nextElement(&alarmIterator)) != NULL) { // Loop through each alarm
+        lineLength += strlen("  ALARM: \n"); // Add an alarm identifier
+
+        if (lineLength > longestLine) {
+          longestLine = lineLength;
+        }
+        stringSize += lineLength;
+        lineLength = 0;
+
+        if (strlen(a->action) == 0) {
+          return NULL; // Action is empty return null
+        }
+        // Get the length of the Action line
+        lineLength += strlen("    ACTION: \n");
+        lineLength += strlen(a->action);
+        if (lineLength > longestLine) {
+          longestLine = lineLength;
+        }
+        stringSize += lineLength;
+        lineLength = 0;
+        if (strlen(a->trigger) == 0) {
+          return NULL; // Action is empty return null
+        }
+        // Get the length of the Trigger line
+        lineLength += strlen("    TRIGGER: \n");
+        lineLength += strlen(a->trigger);
+        if (lineLength > longestLine) {
+          longestLine = lineLength;
+        }
+        stringSize += lineLength;
+        lineLength = 0;
+
+        List alarmProps = a->properties;
+        // Output the props
+        if (alarmProps.head) {
+          lineLength += strlen("    ALARM PROPERTIES: \n"); // Make room for tabs and new line
+          if (lineLength > longestLine) {
+            longestLine = lineLength;
+          }
+          stringSize += lineLength;
+          lineLength = 0;
+
+          // Get length of each property
+          ListIterator propsIter = createIterator(alarmProps);
+          Property* p;
+
+          while ((p = nextElement(&propsIter)) != NULL) {
+            char* printedProp = printPropertyListFunction(p);
+            lineLength += strlen("      \n"); // Make room for tabs and new line
+            lineLength += strlen(printedProp);
+            if (lineLength > longestLine) {
+              longestLine = lineLength;
+            }
+            stringSize += lineLength;
+            lineLength = 0;
+
+            safelyFreeString(printedProp);
+          }
+        }
+      }
+    }
+
     List propsList = event->properties;
     if (propsList.head) {
       lineLength += strlen("  EVENT PROPERTIES: \n");
@@ -515,6 +598,42 @@ char* printCalendar(const Calendar* obj) {
     strcat(string, dtString);
     strcat(string, "\n");
     safelyFreeString(dtString);
+
+    List alarms = event->alarms;
+    if (alarms.head) {
+      ListIterator alarmIterator = createIterator(alarms);
+
+      Alarm* a;
+      while ((a = nextElement(&alarmIterator)) != NULL) { // Loop through each alarm
+        strcat(string, "  ALARM: \n");
+        strcat(string, "    ACTION: ");
+        strcat(string, a->action);
+        strcat(string, "\n");
+        strcat(string, "    TRIGGER: ");
+        strcat(string, a->trigger);
+        strcat(string, "\n");
+
+        List alarmProps = a->properties;
+        // Output the props
+        if (alarmProps.head) {
+          strcat(string, "    ALARM PROPERTIES: \n");
+
+          // Get length of each property
+          ListIterator propsIter = createIterator(alarmProps);
+          Property* p;
+
+          while ((p = nextElement(&propsIter)) != NULL) {
+            char* printedProp = printPropertyListFunction(p);
+            strcat(string, "      ");
+            strcat(string, printedProp);
+            strcat(string, "\n");
+            safelyFreeString(printedProp);
+          }
+        }
+      }
+    }
+
+
     // EVENT PROPERTIES: \n
     List propsList = event->properties;
     if (propsList.head) {
@@ -569,7 +688,6 @@ const char* printError(ErrorCode err) {
       return "NULL";
   }
 }
-
 
 // <------START OF HELPER FUNCTIONS----->
 
@@ -765,6 +883,7 @@ Alarm* createAlarmFromPropList(List props) {
   }
 
   if (!ACTION || !TRIGGER) {
+    clearList(&alarmProps);
     return NULL;
   }
 
@@ -959,6 +1078,10 @@ ErrorCode extractBetweenTags(List props, List* extracted, ErrorCode onFailError,
       insertBack(extracted, p);
     }
     safelyFreeString(line);
+  }
+
+  if (beginCount == 0 && endCount == 0) {
+    return onFailError;
   }
 
   if (beginCount == 1 && endCount != beginCount) { // If there is no end to the VEVENT

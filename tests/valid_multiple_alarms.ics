@@ -15,7 +15,7 @@ someProp:anotehr frikin prop
 END:VALARM
 BEGIN:VALARM
 ACTION:AUDIO
-TRIGGER:t
+TRIGGER:two
 ;com
 REPEAT:5
 someProp:anotehr frikin prop

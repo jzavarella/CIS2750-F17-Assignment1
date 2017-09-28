@@ -24,13 +24,13 @@ char* printAlarmListFunction(void *toBePrinted);
 int compareAlarmListFunction(const void *first, const void *second);
 // Delete functino for alarm list
 void deleteAlarmListFunction(void *toBeDeleted);
-int match(const char* string, char* pattern);
-void safelyFreeString(char* c);
+int match(const char* string, char* pattern); // Matches a given string against aregex expression
+void safelyFreeString(char* c); // Frees a string but checks to see if it is null first
 Property* createProperty(char* propName, char* propDescr);
 Alarm* createAlarm(char* action, char* trigger, List properties);
 Alarm* createAlarmFromPropList(List props);
-char* extractSubstringBefore(char* line, char* terminator);
-char* extractSubstringAfter(char* line, char* terminator);
+char* extractSubstringBefore(char* line, char* terminator); // returns a copy of the string up to the terminator
+char* extractSubstringAfter(char* line, char* terminator); // Returns a copy of the string after the terminator
 Property* extractPropertyFromLine(char* line);
 int matchTEXTField(const char* propDescription);
 /**
@@ -44,242 +44,26 @@ int matchTEXTField(const char* propDescription);
   * The list with each line read into it
 */
 ErrorCode readLinesIntoList(char* fileName, List* list, int bufferSize);
-// Frees the list and returns the sent error code
-ErrorCode freeAndReturn(List* list, ErrorCode e);
 // Deletes a property from a list given the string representation of it
 void deleteProperty(List* propList, char* line);
 ErrorCode extractBetweenTags(List props, List* extracted, ErrorCode onFailError, char* tag);
+char* printDatePretty(DateTime dt); // Prints a pretty version of a date
+ErrorCode createTime(Event* event, char* timeString); // Creates a DateTime and allocates it to the given event if the timeString can be parsed
+void removeIntersectionOfLists(List* l1, List l2); // Removes all nodes from l1 that are found in l2
+Event* newEmptyEvent(); // Creates an empty event
+List copyPropList(List toBeCopied); // Returns a new list with the sent list's nodes copied into it
+void updateLongestLineAndIncrementStringSize(size_t* longestLine, size_t* lineLength, size_t* stringSize);
+void concatenateLine(char* string, const char* c, ... );
+void calculateLineLength(size_t* lineLength, const char* c, ... );
+
 /**
-  *Checks to see if the first and last lines of the list are valid
-  *Deletes the front and back nodes after because they do not contain any meaningful data
+  *Main function to create an event
 */
-int checkEnclosingTags(List* iCalLines);
-char* printDatePretty(DateTime dt);
-ErrorCode createTime(Event* event, char* timeString);
-void removeIntersectionOfLists(List* l1, List l2);
-void printList(List list);
-Event* newEmptyEvent();
-void clearManyLists(List** lists, size_t s);
-
-List copyPropList(List toBeCopied) {
-  List newList = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
-  ListIterator iter = createIterator(toBeCopied);
-  Property* p;
-
-  while ((p = nextElement(&iter)) != NULL) {
-    char* c = toBeCopied.printData(p);
-    Property* p = extractPropertyFromLine(c);
-    insertBack(&newList, p);
-    safelyFreeString(c);
-  }
-  return newList;
-}
-
-ErrorCode createEvent(List eventList, Event* event) {
-  if (!event) {
-    return INV_EVENT;
-  }
-
-  // Creating a property list that wil store all of the alarm props
-  List alarmPropList = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
-  // Copy a new event list
-  List newEventList = copyPropList(eventList);
-
-  // While we still have VALARM tags
-  while (extractBetweenTags(newEventList, &alarmPropList, INV_EVENT, "VALARM") != INV_EVENT) {
-    Alarm* a = createAlarmFromPropList(alarmPropList);
-    if (a) {
-      // printf("trigger: %s\n", a->trigger);
-      insertBack(&event->alarms, a);
-      removeIntersectionOfLists(&newEventList, alarmPropList); // Remove all elements from alarmPropList in newEventList
-      deleteProperty(&newEventList, "BEGIN:VALARM");
-      deleteProperty(&newEventList, "END:VALARM");
-    } else {
-      clearList(&newEventList);
-      clearList(&alarmPropList);
-      return INV_EVENT;
-    }
-    clearList(&alarmPropList); // Clear the list
-  }
-  // ErrorCode alarmPropListError = extractBetweenTags(eventList, &alarmPropList, INV_EVENT, "VALARM");
-  // printf("Alarm error: %s\n", printError(alarmPropListError));
-  // printList(alarmPropList);
-
-  // List alarmList = initializeList(&printAlarmListFunction, &deleteAlarmListFunction, &compareAlarmListFunction);
-
-
-  // Alarm* a = createAlarmFromPropList(alarmPropList);
-  // if (a) {
-  //   insertBack(&event->alarms, a);
-  //   removeIntersectionOfLists(&newEventList, alarmPropList);
-  //   deleteProperty(&newEventList, "BEGIN:VALARM"); // Delete UID from event properties
-  //   deleteProperty(&newEventList, "END:VALARM"); // Delete DTSTAMP from event properties
-  // }
-
-  ListIterator eventIterator = createIterator(newEventList);
-  Property* prop;
-  char* UID = NULL;
-  char* DTSTAMP = NULL;
-  while ((prop = nextElement(&eventIterator)) != NULL) {
-    char* propName = prop->propName;
-    char* propDescr = prop->propDescr;
-    if (match(propName, "^UID$")) {
-      if (UID != NULL || !propDescr || !strlen(propDescr)) {
-        safelyFreeString(UID);
-        safelyFreeString(DTSTAMP);
-        clearList(&newEventList);
-        return INV_EVENT; // UID has already been assigned or propDesc is null or empty
-      }
-      if (match(propDescr, "^(;|:)")) {
-        char temp[strlen(propDescr)];
-        memcpy(temp, propDescr + 1*sizeof(char), strlen(propDescr));
-        strcpy(event->UID, temp);
-      } else {
-        strcpy(event->UID, propDescr);
-      }
-
-      UID = eventList.printData(prop);
-    } else if (match(propName, "^DTSTAMP$")) {
-      if (DTSTAMP != NULL || !propDescr || !strlen(propDescr)) {
-        safelyFreeString(UID);
-        safelyFreeString(DTSTAMP);
-        clearList(&newEventList);
-        return INV_EVENT; // DTSTAMP has already been assigned or propDesc is null or empty
-      }
-      DTSTAMP = eventList.printData(prop); // Set the DTSTAMP flag
-      ErrorCode e = createTime(event, propDescr);
-      if (e != OK) {
-        safelyFreeString(UID); // Free stored UID
-        safelyFreeString(DTSTAMP); // Free stored DTSTAMP
-        clearList(&newEventList);
-        return e;
-      }
-    }
-  }
-
-  if (!UID || !DTSTAMP) { // If wecould not find UID or DTSTAMP
-    safelyFreeString(UID); // Free stored UID
-    safelyFreeString(DTSTAMP); // Free stored DTSTAMP
-    clearList(&newEventList);
-    return INV_EVENT;
-  }
-
-  deleteProperty(&newEventList, UID); // Delete UID from event properties
-  deleteProperty(&newEventList, DTSTAMP); // Delete DTSTAMP from event properties
-  safelyFreeString(UID); // Free stored UID
-  safelyFreeString(DTSTAMP); // Free stored DTSTAMP
-  // printList(newEventList);
-  // printList(alarmList);
-
-  // List alarmPropList = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
-  // ErrorCode e = extractBetweenTags(eventList, &alarmPropList, INV_EVENT, "VALARM");
-  // if (e != OK) {
-  //   return freeAndReturn(&alarmPropList, e);
-  // }
-  //
-  // List alarmList = initializeList(&printAlarmListFunction, &deleteAlarmListFunction, &compareAlarmListFunction);
-  // //
-  // Alarm* a = createAlarmFromPropList(alarmPropList);
-  // if (a) {
-  //   // return freeAndReturn(&alarmPropList, INV_EVENT);
-  //   deleteProperty(&eventList, "BEGIN:VALARM");
-  //   deleteProperty(&eventList, "END:VALARM");
-  //   insertBack(&alarmList, a);
-  // }
-  //
-  // removeIntersectionOfLists(&eventList, alarmPropList);
-
-  event->properties = newEventList;
-  clearList(&alarmPropList);
-
-  // event->alarms = alarmList;
-
-  return OK;
-}
-
-// ErrorCode parseEvent(List* iCalLines, Calendar* calendar) {
-//
-//   // List that will store the lines between the VEVENT open and close tags
-//   List eventList = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
-//
-//   ErrorCode errorCode = extractBetweenTags(*iCalLines, &eventList, INV_EVENT, "VEVENT");
-//   if (errorCode != OK) {
-//     return freeAndReturn(&eventList, errorCode);
-//   }
-//
-//   deleteProperty(iCalLines, "BEGIN:VEVENT"); // Remove the begin event tag
-//   deleteProperty(iCalLines, "END:VEVENT"); // Remove the end event tag
-//   removeIntersectionOfLists(iCalLines, eventList); // Removes all properties from iCalLines that are in eventList
-//
-//   Event* event = malloc(sizeof(Event));
-//   errorCode = createEvent(&eventList, event);
-//   if (errorCode != OK) {
-//     free(event);
-//     return freeAndReturn(&eventList, errorCode);
-//   }
-//   calendar->event = event;
-//   return OK;
-// }
-
-ErrorCode parseRequirediCalTags(List* list, Calendar* cal) {
-  ListIterator iterator = createIterator(*list);
-  Property* p;
-  char* VERSION = NULL;
-  char* PRODID = NULL;
-  while ((p = nextElement(&iterator)) != NULL) {
-    char* name = p->propName;
-    char* description = p->propDescr;
-
-    if (match(name, "^VERSION$")) {
-      if (VERSION) {
-        safelyFreeString(PRODID); // PROD might be allocated so we must remove it before returning
-        safelyFreeString(VERSION); // Version might be allocated so we must remove it before returning
-        return DUP_VER;
-      }
-      if (!description || !match(description, "^(:|;)[[:digit:]]+(\\.[[:digit:]]+)*$")) {
-        safelyFreeString(PRODID); // PROD might be allocated so we must remove it before returning
-        safelyFreeString(VERSION); // Version might be allocated so we must remove it before returning
-        return INV_VER;
-      }
-
-      VERSION = malloc(strlen(description) * sizeof(char));
-      memmove(VERSION, description+1, strlen(description)); // remove the first character as it is (; or :)
-    } else if (match(name, "^PRODID$")) {
-      if (PRODID) {
-        safelyFreeString(PRODID); // PROD might be allocated so we must remove it before returning
-        safelyFreeString(VERSION); // Version might be allocated so we must remove it before returning
-        return DUP_PRODID;
-      }
-
-      if (!description || !matchTEXTField(description)) {
-        safelyFreeString(PRODID); // PROD might be allocated so we must remove it before returning
-        safelyFreeString(VERSION); // Version might be allocated so we must remove it before returning
-        return INV_PRODID;
-      }
-      PRODID = malloc(strlen(description) * sizeof(char));
-      memmove(PRODID, description+1, strlen(description)); // remove the first character as it is (; or :)
-    }
-  }
-
-  if (!VERSION || !PRODID) {
-    safelyFreeString(PRODID); // PROD might be allocated so we must remove it before returning
-    safelyFreeString(VERSION); // Version might be allocated so we must remove it before returning
-    return INV_CAL; // We are missing required tags
-  }
-
-  cal->version = atof(VERSION);
-  strcpy(cal->prodID, PRODID);
-  safelyFreeString(PRODID);
-  safelyFreeString(VERSION);
-  return OK;
-}
-
-void freeEvent(Event* event) {
-  if (!event) {
-    return; // Nothing to see here folks
-  }
-  clearList(&event->properties);
-}
+ErrorCode createEvent(List eventList, Event* event);
+/**
+  *Checks to see if the required iCalendar tags are present
+*/
+ErrorCode parseRequirediCalTags(List* list, Calendar* cal);
 
 /** Function to create a Calendar object based on the contents of an iCalendar file.
  *@pre File name cannot be an empty string or NULL.  File name must have the .ics extension.
@@ -321,7 +105,6 @@ ErrorCode createCalendar(char* fileName, Calendar** obj) {
   ErrorCode betweenVEventTagsError = extractBetweenTags(betweenVCalendarTags, &betweenVEventTags, INV_EVENT, "VEVENT");
   // Check to see if there is an event at all
   if (!betweenVEventTags.head || !betweenVEventTags.tail) {
-    // clearManyLists([&iCalPropertyList, &betweenVCalendarTags, &betweenVEventTags], 3);
     clearList(&iCalPropertyList);
     clearList(&betweenVCalendarTags);
     clearList(&betweenVEventTags);
@@ -363,7 +146,6 @@ ErrorCode createCalendar(char* fileName, Calendar** obj) {
   return OK;
 }
 
-
 /** Function to delete all calendar content and free all the memory.
  *@pre Calendar object exists, is not null, and has not been freed
  *@post Calendar object had been freed
@@ -378,7 +160,6 @@ void deleteCalendar(Calendar* obj) {
   Event* event = obj->event;
   if (event != NULL) {
     List* props = &event->properties;
-    // printf("%p\n", props->head);
     if (props) {
       clearList(props);
     }
@@ -390,40 +171,6 @@ void deleteCalendar(Calendar* obj) {
   }
 
   free(obj);
-}
-
-void updateLongestLineAndIncrementStringSize(size_t* longestLine, size_t* lineLength, size_t* stringSize) {
-  if (*lineLength > *longestLine) {
-    *longestLine = *lineLength;
-  }
-  *stringSize += *lineLength;
-  *lineLength = 0;
-}
-
-void calculateLineLength(size_t* lineLength, const char* c, ... ) {
-   va_list valist;
-   va_start(valist, c);
-
-   /* access all the arguments assigned to valist */
-   while (c) {
-        *lineLength += strlen(c);
-        c = va_arg(valist, const char*);
-    }
-   /* clean memory reserved for valist */
-   va_end(valist);
-}
-
-void concatenateLine(char* string, const char* c, ... ) {
-   va_list valist;
-   va_start(valist, c);
-
-   /* access all the arguments assigned to valist */
-   while (c) {
-        strcat(string, c); // concatenate each value onto the string
-        c = va_arg(valist, const char*);
-    }
-   /* clean memory reserved for valist */
-   va_end(valist);
 }
 
 /** Function to create a string representation of a Calendar object.
@@ -785,19 +532,25 @@ Property* createProperty(char* propName, char* propDescr) {
 
 Alarm* createAlarm(char* action, char* trigger, List properties) {
   if (!action || !trigger) {
-    return NULL;
+    return NULL; // If the action or trigger is null then nothing can save you
   }
   Alarm* alarm = malloc(sizeof(Alarm));
+  if (action[0] == ':' || action[0] == ';') { // Remove the beginning ; or : if it exists
+    memmove(action, action + 1, strlen(action));
+  }
   strcpy(alarm->action, action);
   alarm->trigger = malloc(strlen(trigger) + 1);
 
   if (!alarm->trigger) {
     free(alarm);
-    return NULL;
+    return NULL; // If we were unable to allocate memory
   }
 
+  if (trigger[0] == ':' || trigger[0] == ';') { // Remove the beginning ; or : if it exists
+    memmove(trigger, trigger + 1, strlen(trigger));
+  }
   strcpy(alarm->trigger, trigger);
-  alarm->properties = properties;
+  alarm->properties = properties; // Set the properties
 
   return alarm;
 }
@@ -986,14 +739,6 @@ ErrorCode readLinesIntoList(char* fileName, List* list, int bufferSize) {
   return OK;
 }
 
-/**
-  *Frees the list and returns the sent error code
-*/
-ErrorCode freeAndReturn(List* list, ErrorCode e) {
-  clearList(list);
-  return e;
-}
-
 void deleteProperty(List* propList, char* line) {
   Property* p = extractPropertyFromLine(line);
   safelyFreeString(deleteDataFromList(propList, p));
@@ -1053,45 +798,6 @@ ErrorCode extractBetweenTags(List props, List* extracted, ErrorCode onFailError,
   }
 
   return OK; // If we made it here, we have extracted the eventList
-}
-
-/**
-  *Checks to see if the first and last lines of the list are valid
-  *Deletes the front and back nodes after because they do not contain any meaningful data
-*/
-int checkEnclosingTags(List* iCalLines) {
-  Property* p = getFromFront(*iCalLines);
-  if (!p) {
-    return 0; // If we couldnt pull off the list
-  }
-  char* line = iCalLines->printData(p); // Pull the first line off the list
-  if (!line) {
-    return 0; // If we couldnt pull off the list
-  }
-  if (!match(line, "^BEGIN:VCALENDAR$")) { // Check if it is not valid
-    safelyFreeString(line);
-    return 0; // Retrun 0 (false)
-  }
-
-  deleteProperty(iCalLines, line); // Remove the begin tag as it has no meaningful information
-  safelyFreeString(line);
-
-  p = getFromBack(*iCalLines);
-  if (!p) {
-    return 0; // If we couldnt pull off the list
-  }
-  line = iCalLines->printData(p); // Pull the last line off the list
-  if (!line) {
-    return 0; // If we couldnt pull off the list
-  }
-  if (!match(line, "^END:VCALENDAR$")) { // Check if line is not valid
-    safelyFreeString(line);
-    return 0; // Retrun 0 (false)
-  }
-  deleteProperty(iCalLines, line); // Remove the end tag as it is no meaningful information anymore
-  safelyFreeString(line);
-
-  return 1; // If we got here, return 1 (true)
 }
 
 char* printDatePretty(DateTime dt) {
@@ -1155,12 +861,6 @@ void removeIntersectionOfLists(List* l1, List l2) {
   }
 }
 
-void printList(List list) {
-  char* i = toString(list);
-  printf("%s\n\n", i);
-  free(i);
-}
-
 Event* newEmptyEvent() {
   Event* e = malloc(sizeof(Event));
   e->properties = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
@@ -1168,8 +868,188 @@ Event* newEmptyEvent() {
   return e;
 }
 
-void clearManyLists(List** lists, size_t s) {
-  for (size_t i = 0; i < s; i++) {
-    clearList(lists[i]);
+List copyPropList(List toBeCopied) {
+  List newList = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
+  ListIterator iter = createIterator(toBeCopied);
+  Property* p;
+
+  while ((p = nextElement(&iter)) != NULL) {
+    char* c = toBeCopied.printData(p);
+    Property* p = extractPropertyFromLine(c);
+    insertBack(&newList, p);
+    safelyFreeString(c);
   }
+  return newList;
+}
+
+ErrorCode createEvent(List eventList, Event* event) {
+  if (!event) {
+    return INV_EVENT;
+  }
+
+  // Creating a property list that wil store all of the alarm props
+  List alarmPropList = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
+  // Copy a new event list
+  List newEventList = copyPropList(eventList);
+
+  // While we still have VALARM tags
+  while (extractBetweenTags(newEventList, &alarmPropList, INV_EVENT, "VALARM") != INV_EVENT) {
+    Alarm* a = createAlarmFromPropList(alarmPropList);
+    if (a) {
+      insertBack(&event->alarms, a);
+      removeIntersectionOfLists(&newEventList, alarmPropList); // Remove all elements from alarmPropList in newEventList
+      deleteProperty(&newEventList, "BEGIN:VALARM");
+      deleteProperty(&newEventList, "END:VALARM");
+    } else {
+      clearList(&newEventList);
+      clearList(&alarmPropList);
+      return INV_EVENT;
+    }
+    clearList(&alarmPropList); // Clear the list
+  }
+
+  ListIterator eventIterator = createIterator(newEventList);
+  Property* prop;
+  char* UID = NULL;
+  char* DTSTAMP = NULL;
+  while ((prop = nextElement(&eventIterator)) != NULL) {
+    char* propName = prop->propName;
+    char* propDescr = prop->propDescr;
+    if (match(propName, "^UID$")) {
+      if (UID != NULL || !propDescr || !strlen(propDescr)) {
+        safelyFreeString(UID);
+        safelyFreeString(DTSTAMP);
+        clearList(&newEventList);
+        return INV_EVENT; // UID has already been assigned or propDesc is null or empty
+      }
+      if (match(propDescr, "^(;|:)")) {
+        char temp[strlen(propDescr)];
+        memcpy(temp, propDescr + 1*sizeof(char), strlen(propDescr));
+        strcpy(event->UID, temp);
+      } else {
+        strcpy(event->UID, propDescr);
+      }
+
+      UID = eventList.printData(prop);
+    } else if (match(propName, "^DTSTAMP$")) {
+      if (DTSTAMP != NULL || !propDescr || !strlen(propDescr)) {
+        safelyFreeString(UID);
+        safelyFreeString(DTSTAMP);
+        clearList(&newEventList);
+        return INV_EVENT; // DTSTAMP has already been assigned or propDesc is null or empty
+      }
+      DTSTAMP = eventList.printData(prop); // Set the DTSTAMP flag
+      ErrorCode e = createTime(event, propDescr);
+      if (e != OK) {
+        safelyFreeString(UID); // Free stored UID
+        safelyFreeString(DTSTAMP); // Free stored DTSTAMP
+        clearList(&newEventList);
+        return e;
+      }
+    }
+  }
+
+  if (!UID || !DTSTAMP) { // If wecould not find UID or DTSTAMP
+    safelyFreeString(UID); // Free stored UID
+    safelyFreeString(DTSTAMP); // Free stored DTSTAMP
+    clearList(&newEventList);
+    return INV_EVENT;
+  }
+
+  deleteProperty(&newEventList, UID); // Delete UID from event properties
+  deleteProperty(&newEventList, DTSTAMP); // Delete DTSTAMP from event properties
+  safelyFreeString(UID); // Free stored UID
+  safelyFreeString(DTSTAMP); // Free stored DTSTAMP
+
+  event->properties = newEventList; // Set properties
+  clearList(&alarmPropList);
+
+  return OK;
+}
+
+ErrorCode parseRequirediCalTags(List* list, Calendar* cal) {
+  ListIterator iterator = createIterator(*list);
+  Property* p;
+  char* VERSION = NULL;
+  char* PRODID = NULL;
+  while ((p = nextElement(&iterator)) != NULL) {
+    char* name = p->propName;
+    char* description = p->propDescr;
+
+    if (match(name, "^VERSION$")) {
+      if (VERSION) {
+        safelyFreeString(PRODID); // PROD might be allocated so we must remove it before returning
+        safelyFreeString(VERSION); // Version might be allocated so we must remove it before returning
+        return DUP_VER;
+      }
+      if (!description || !match(description, "^(:|;)[[:digit:]]+(\\.[[:digit:]]+)*$")) {
+        safelyFreeString(PRODID); // PROD might be allocated so we must remove it before returning
+        safelyFreeString(VERSION); // Version might be allocated so we must remove it before returning
+        return INV_VER;
+      }
+
+      VERSION = malloc(strlen(description) * sizeof(char));
+      memmove(VERSION, description+1, strlen(description)); // remove the first character as it is (; or :)
+    } else if (match(name, "^PRODID$")) {
+      if (PRODID) {
+        safelyFreeString(PRODID); // PROD might be allocated so we must remove it before returning
+        safelyFreeString(VERSION); // Version might be allocated so we must remove it before returning
+        return DUP_PRODID;
+      }
+
+      if (!description || !matchTEXTField(description)) {
+        safelyFreeString(PRODID); // PROD might be allocated so we must remove it before returning
+        safelyFreeString(VERSION); // Version might be allocated so we must remove it before returning
+        return INV_PRODID;
+      }
+      PRODID = malloc(strlen(description) * sizeof(char));
+      memmove(PRODID, description+1, strlen(description)); // remove the first character as it is (; or :)
+    }
+  }
+
+  if (!VERSION || !PRODID) {
+    safelyFreeString(PRODID); // PROD might be allocated so we must remove it before returning
+    safelyFreeString(VERSION); // Version might be allocated so we must remove it before returning
+    return INV_CAL; // We are missing required tags
+  }
+
+  cal->version = atof(VERSION);
+  strcpy(cal->prodID, PRODID);
+  safelyFreeString(PRODID);
+  safelyFreeString(VERSION);
+  return OK;
+}
+
+void updateLongestLineAndIncrementStringSize(size_t* longestLine, size_t* lineLength, size_t* stringSize) {
+  if (*lineLength > *longestLine) {
+    *longestLine = *lineLength;
+  }
+  *stringSize += *lineLength;
+  *lineLength = 0;
+}
+
+void calculateLineLength(size_t* lineLength, const char* c, ... ) {
+   va_list valist;
+   va_start(valist, c);
+
+   /* access all the arguments assigned to valist */
+   while (c) {
+        *lineLength += strlen(c);
+        c = va_arg(valist, const char*);
+    }
+   /* clean memory reserved for valist */
+   va_end(valist);
+}
+
+void concatenateLine(char* string, const char* c, ... ) {
+   va_list valist;
+   va_start(valist, c);
+
+   /* access all the arguments assigned to valist */
+   while (c) {
+        strcat(string, c); // concatenate each value onto the string
+        c = va_arg(valist, const char*);
+    }
+   /* clean memory reserved for valist */
+   va_end(valist);
 }

@@ -26,13 +26,13 @@ int compareAlarmListFunction(const void *first, const void *second);
 void deleteAlarmListFunction(void *toBeDeleted);
 int match(const char* string, char* pattern); // Matches a given string against aregex expression
 void safelyFreeString(char* c); // Frees a string but checks to see if it is null first
-Property* createProperty(char* propName, char* propDescr);
-Alarm* createAlarm(char* action, char* trigger, List properties);
-Alarm* createAlarmFromPropList(List props);
+Property* createProperty(char* propName, char* propDescr); // Create a property from a name and a description
+Alarm* createAlarm(char* action, char* trigger, List properties); // Create an alarm given and action and a trigger and a list of properties
+Alarm* createAlarmFromPropList(List props); // Creates an alarm from a list of properties
 char* extractSubstringBefore(char* line, char* terminator); // returns a copy of the string up to the terminator
 char* extractSubstringAfter(char* line, char* terminator); // Returns a copy of the string after the terminator
-Property* extractPropertyFromLine(char* line);
-int matchTEXTField(const char* propDescription);
+Property* extractPropertyFromLine(char* line); // Given a line, extract a property from it
+int matchTEXTField(const char* propDescription); // checks to see if a string matches a valid ICAL TEXT field
 /**
   *Takes a file that has been opened and reads the lines into a linked list of chars*
   *with each node being one line of the file.
@@ -52,9 +52,9 @@ ErrorCode createTime(Event* event, char* timeString); // Creates a DateTime and 
 void removeIntersectionOfLists(List* l1, List l2); // Removes all nodes from l1 that are found in l2
 Event* newEmptyEvent(); // Creates an empty event
 List copyPropList(List toBeCopied); // Returns a new list with the sent list's nodes copied into it
-void updateLongestLineAndIncrementStringSize(size_t* longestLine, size_t* lineLength, size_t* stringSize);
-void concatenateLine(char* string, const char* c, ... );
-void calculateLineLength(size_t* lineLength, const char* c, ... );
+void updateLongestLineAndIncrementStringSize(size_t* longestLine, size_t* lineLength, size_t* stringSize); // Calculates the longest line
+void concatenateLine(char* string, const char* c, ... ); // concatenate all 'c's to string
+void calculateLineLength(size_t* lineLength, const char* c, ... ); // Sums the length of all strings sent to it
 
 /**
   *Main function to create an event
@@ -81,69 +81,71 @@ ErrorCode createCalendar(char* fileName, Calendar** obj) {
   Calendar* calendar = *obj;
   strcpy(calendar->prodID, ""); // Ensure that this field is not blank to prevent uninitialized conditinoal jump errors in valgrind
 
-  Event* event = newEmptyEvent();
-  calendar->event = event;
-  List iCalPropertyList = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
+  Event* event = newEmptyEvent(); // Create an empty event
+  calendar->event = event; // Assign the empty event
+
+  List iCalPropertyList = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction); // Create a list to store all properties/ lines
   ErrorCode lineCheckError = readLinesIntoList(fileName, &iCalPropertyList, 512); // Read the lines of the file into a list of properties
-  // printf("%s\n", toString(iCalPropertyList));
   if (lineCheckError != OK) { // If any of the lines were invalid, this will not return OK
-    clearList(&iCalPropertyList);
-    return lineCheckError;
+    clearList(&iCalPropertyList); // Clear the list before returning
+    return lineCheckError; // Return the error that was produced
   }
 
+  // List to store calendar properties
   List betweenVCalendarTags = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
-
+  // Get the properties between event tags
   ErrorCode betweenVCalendarTagsError = extractBetweenTags(iCalPropertyList, &betweenVCalendarTags, INV_CAL, "VCALENDAR");
-  if (betweenVCalendarTagsError != OK) {
-    clearList(&iCalPropertyList);
+  if (betweenVCalendarTagsError != OK) { // If there was a problem parsing
+    clearList(&iCalPropertyList); // Free lists before returning
     clearList(&betweenVCalendarTags);
-    return betweenVCalendarTagsError;
+    return betweenVCalendarTagsError; // Return the error that was produced
   }
 
+  // List to store event properties
   List betweenVEventTags = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
-
+  // Extract all properties between event tags
   ErrorCode betweenVEventTagsError = extractBetweenTags(betweenVCalendarTags, &betweenVEventTags, INV_EVENT, "VEVENT");
   // Check to see if there is an event at all
   if (!betweenVEventTags.head || !betweenVEventTags.tail) {
-    clearList(&iCalPropertyList);
+    clearList(&iCalPropertyList); // Clear lists before returning
     clearList(&betweenVCalendarTags);
     clearList(&betweenVEventTags);
     return INV_CAL; // If there is no event, then the calendar is invalid
   }
   // If there is an event, check the event error
   if (betweenVEventTagsError != OK) {
-    clearList(&iCalPropertyList);
+    clearList(&iCalPropertyList); // Clear lists before returning
     clearList(&betweenVCalendarTags);
     clearList(&betweenVEventTags);
-    return betweenVEventTagsError;
+    return betweenVEventTagsError; // Return the error that was produced
   }
 
-  ErrorCode eventError = createEvent(betweenVEventTags, event);
-  if (eventError != OK) {
-    clearList(&iCalPropertyList);
+  ErrorCode eventError = createEvent(betweenVEventTags, event); // Create and event given the event properties that were extracted
+  if (eventError != OK) { // If there was a problem
+    clearList(&iCalPropertyList); // Clear list before returning
     clearList(&betweenVCalendarTags);
     clearList(&betweenVEventTags);
-    return eventError;
+    return eventError; // Return the error that was produced
   }
 
-  removeIntersectionOfLists(&betweenVCalendarTags, betweenVEventTags);
-  deleteProperty(&betweenVCalendarTags, "BEGIN:VEVENT");
-  deleteProperty(&betweenVCalendarTags, "END:VEVENT");
+  removeIntersectionOfLists(&betweenVCalendarTags, betweenVEventTags); // Remove the event properties from the calendar tags
+  deleteProperty(&betweenVCalendarTags, "BEGIN:VEVENT"); // Remove the begin tag
+  deleteProperty(&betweenVCalendarTags, "END:VEVENT"); // Remove the begin tag
 
   // // We should only have VERSION and PRODID now
   ErrorCode iCalIdErrors = parseRequirediCalTags(&betweenVCalendarTags, *obj); // Place UID and version in the obj
-  if (iCalIdErrors != OK) {
-    clearList(&iCalPropertyList);
+  if (iCalIdErrors != OK) { // If there was a problem
+    clearList(&iCalPropertyList); // Clear lists before returning
     clearList(&betweenVCalendarTags);
     clearList(&betweenVEventTags);
-    return iCalIdErrors;
+    return iCalIdErrors; // Return the error that was produced
   }
 
 
-  clearList(&iCalPropertyList);
+  clearList(&iCalPropertyList); // Clear lists before returning
   clearList(&betweenVCalendarTags);
   clearList(&betweenVEventTags);
-  return OK;
+  return OK; // Congratulations you parsed the file. Return OK
 }
 
 /** Function to delete all calendar content and free all the memory.
@@ -158,19 +160,19 @@ void deleteCalendar(Calendar* obj) {
   }
 
   Event* event = obj->event;
-  if (event != NULL) {
-    List* props = &event->properties;
-    if (props) {
-      clearList(props);
+  if (event != NULL) { // If there is an event
+    List* props = &event->properties; // Grab the props
+    if (props) { // If there are props
+      clearList(props); // Set them free
     }
-    List* alarms = &event->alarms;
-    if (alarms) {
-      clearList(alarms);
+    List* alarms = &event->alarms; // Grab the alarms
+    if (alarms) { // If the alarms exist
+      clearList(alarms); // Set them free
     }
-    free(event);
+    free(event); // Set it free
   }
 
-  free(obj);
+  free(obj); // Free object? I Like free objects
 }
 
 /** Function to create a string representation of a Calendar object.
@@ -366,7 +368,7 @@ char* printCalendar(const Calendar* obj) {
 
   strcat(string, cap); // Footer
 
-  return string;
+  return string; // Beam me up
 }
 
 
@@ -415,7 +417,7 @@ char* printError(ErrorCode err) {
       strcpy(error, "Malformed Date");
       break;
     case OTHER_ERROR:
-      error = malloc(sizeof("Generic Error"));
+      error = malloc(sizeof("Generic Error")); // This error may be generic, but you aren't :)
       strcpy(error, "Generic Error");
       break;
     default:
@@ -449,9 +451,10 @@ int match(const char* string, char* pattern) {
 }
 
 int matchTEXTField(const char* propDescription) {
-  return match(propDescription, "^(;|:)[^[:cntrl:]\"\\,:;]+$");
+  return match(propDescription, "^(;|:)[^[:cntrl:]\"\\,:;]+$"); // This regex matches valid text characters
 }
 
+// Check if the string is allocated before freeing it
 void safelyFreeString(char* c) {
   if (c) {
     free(c);
@@ -465,14 +468,14 @@ char* printPropertyListFunction(void *toBePrinted) {
   char c;
   size_t i = 0;
   while ((c = p->propName[i]) != '\0') {
-    i ++;
+    i ++; // Calculate length of the prop name
   }
-  finalSize += i;
-  i = 0;
+  finalSize += i; // add it to the total
+  i = 0; // reset
   while ((c = p->propDescr[i]) != '\0') {
-    i ++;
+    i ++; // Calculate length of description
   }
-  finalSize += i;
+  finalSize += i; // add it up again
   char* string = malloc(finalSize + 1); // +1 to make room for NULL terminator
   strcpy(string, p->propName);
   strcat(string, p->propDescr);
@@ -481,44 +484,46 @@ char* printPropertyListFunction(void *toBePrinted) {
 }
 
 int comparePropertyListFunction(const void *first, const void *second) {
-  char* s1 = printPropertyListFunction((void*)first);
+  char* s1 = printPropertyListFunction((void*)first); // Print each prop
   char* s2 = printPropertyListFunction((void*)second);
-  int result = strcmp(s1, s2);
+  int result = strcmp(s1, s2); // Compare the strings
 
-  safelyFreeString(s1);
+  safelyFreeString(s1); // BECAUSE I'M FREEEEE!!!!! FREE FALLIN'
   safelyFreeString(s2);
-	return result;
+	return result; // Return the result
 }
 
 void deletePropertyListFunction(void *toBeDeleted) {
   Property* p = (Property*) toBeDeleted;
   if (!p) {
-    return; // Cant free nothing
+    return; // Cant free nothing. Someone must have done our job before we got here >.>
   }
 	free(p);
 }
 
+// This method never gets called but whatev
 char* printAlarmListFunction(void *toBePrinted) {
   Alarm* a = (Alarm*) toBePrinted;
   size_t finalSize = 0;
   char c;
   size_t i = 0;
   while ((c = a->action[i]) != '\0') {
-    i ++;
+    i ++; // Calculate size of action
   }
   finalSize += i;
   i = 0;
   while ((c = a->trigger[i]) != '\0') {
-    i ++;
+    i ++; // Calculate size of trigger
   }
   finalSize += i;
   finalSize += 4; // Add room for "|"
-  char* propListString = toString(a->properties);
+  char* propListString = toString(a->properties); // Print the properties
   i = 0;
   while ((c = propListString[i]) != '\0') {
-    i ++;
+    i ++; // Calculate size of list string
   }
   finalSize += i;
+  // Mash it all up together
   char* string = malloc(finalSize + 1); // +1 to make room for NULL terminator
   strcpy(string, "|");
   strcat(string, a->action);
@@ -528,10 +533,11 @@ char* printAlarmListFunction(void *toBePrinted) {
   strcat(string, propListString);
   strcat(string, "|");
   string[finalSize] = '\0'; // Set null terminator just in case strcat didnt
-  safelyFreeString(propListString);
-  return string;
+  safelyFreeString(propListString); // Bye felicia
+  return string; // Return the string
 }
 
+// This hasnt been required yet
 int compareAlarmListFunction(const void *first, const void *second) {
   //TODO: Create this
   return 0;
@@ -543,17 +549,17 @@ void deleteAlarmListFunction(void *toBeDeleted) {
     return; // Cant free nothing
   }
   if (a->trigger) {
-    free(a->trigger);
+    free(a->trigger); // Free trigger if it exists
   }
-  clearList(&a->properties);
-	free(a);
+  clearList(&a->properties); // Clear properties
+	free(a); // Bye
 }
 
 Property* createProperty(char* propName, char* propDescr) {
   Property* p = malloc(sizeof(Property) + strlen(propDescr)*sizeof(char*) + strlen(propName)); // Allocate room for the property and the flexible array member
-  strcpy(p->propName, propName);
-  strcpy(p->propDescr, propDescr);
-  return p;
+  strcpy(p->propName, propName); // Copy prop name over
+  strcpy(p->propDescr, propDescr); // Copy prop description over
+  return p; // Send it back
 }
 
 Alarm* createAlarm(char* action, char* trigger, List properties) {
@@ -564,39 +570,42 @@ Alarm* createAlarm(char* action, char* trigger, List properties) {
   if (action[0] == ':' || action[0] == ';') { // Remove the beginning ; or : if it exists
     memmove(action, action + 1, strlen(action));
   }
-  strcpy(alarm->action, action);
-  alarm->trigger = malloc(strlen(trigger) + 1);
+  strcpy(alarm->action, action); // Copy the action
+  alarm->trigger = malloc(strlen(trigger) + 1); // Allocate room for trigger
 
   if (!alarm->trigger) {
-    free(alarm);
+    free(alarm); // Free alarm before returning
     return NULL; // If we were unable to allocate memory
   }
 
   if (trigger[0] == ':' || trigger[0] == ';') { // Remove the beginning ; or : if it exists
     memmove(trigger, trigger + 1, strlen(trigger));
   }
-  strcpy(alarm->trigger, trigger);
+  strcpy(alarm->trigger, trigger); // Copy trigger
   alarm->properties = properties; // Set the properties
 
-  return alarm;
+  return alarm; // Send it back
 }
 
 Alarm* createAlarmFromPropList(List props) {
+  // Create a list for the props
   List alarmProps = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
-  ListIterator propsIterator = createIterator(props);
 
-  char* ACTION = NULL;
+  char* ACTION = NULL; // Declare action and trigger
   char* TRIGGER = NULL;
 
-  Property* prop;
+  Property* prop; // Declare prop
+  ListIterator propsIterator = createIterator(props); // Do I really need to re-iterate myself here?
+
   while ((prop = nextElement(&propsIterator)) != NULL) {
-    char* propName = prop->propName;
-    char* propDescr = prop->propDescr;
-    if (!propDescr) {
-      clearList(&alarmProps);
-      return NULL;
+    char* propName = prop->propName; // Get name
+    char* propDescr = prop->propDescr; // Get description
+    if (!propDescr) { // If no descripting, we are in trouble
+      clearList(&alarmProps); // Clear before returning
+      return NULL; // Bye
     }
-    char tempDescription[strlen(propDescr) + 2];
+
+    char tempDescription[strlen(propDescr) + 2]; //
     strcpy(tempDescription, propDescr);
     memmove(tempDescription, tempDescription+1, strlen(tempDescription)); // remove the first character as it is (; or :)
     if (match(propName, "^ACTION")) {
@@ -604,13 +613,16 @@ Alarm* createAlarmFromPropList(List props) {
         clearList(&alarmProps);
         return NULL; // Already have an ACTION or description is null
       }
-      ACTION = propDescr;
+      ACTION = malloc(strlen(tempDescription) + 1);
+      strcpy(ACTION, tempDescription);
+
     } else if (match(propName, "^TRIGGER$")) {
       if (TRIGGER) {
         clearList(&alarmProps);
-        return NULL; // Already have trigger or description is null
+        return NULL; // Already have trigger
       } else {
-        TRIGGER = propDescr;
+        TRIGGER = malloc(strlen(tempDescription) + 1);
+        strcpy(TRIGGER, tempDescription);
       }
     } else if (match(propName, "^REPEAT$")) {
       if (!match(tempDescription, "^[[:digit:]]+$")) {
@@ -627,10 +639,13 @@ Alarm* createAlarmFromPropList(List props) {
 
   if (!ACTION || !TRIGGER) {
     clearList(&alarmProps);
+    safelyFreeString(ACTION);
+    safelyFreeString(TRIGGER);
     return NULL;
   }
-
   Alarm* a = createAlarm(ACTION, TRIGGER, alarmProps);
+  safelyFreeString(ACTION);
+  safelyFreeString(TRIGGER);
   return a;
 }
 
@@ -675,21 +690,22 @@ char* extractSubstringAfter(char* line, char* terminator) {
 }
 
 Property* extractPropertyFromLine(char* line) {
-  char* propName = NULL;
-  char* propDescr = strpbrk(line, ":;");
-  if (!propDescr) {
-    return NULL;
+  size_t lineLength = strlen(line);
+  char tempLine[lineLength + 1];
+  strcpy(tempLine, line);
+  char* propName = strtok(line, ":;");
+  char* temp;
+  size_t descriptionLength = 0;
+  while ((temp = strtok(NULL, ";:"))) {
+    descriptionLength += strlen(temp);
+    descriptionLength += 1; // strtok removes the ';'
   }
-  propName = extractSubstringBefore(line, ":");
-  // printf("Before':'    %s\n", propName);
-  if (!propName) {
-    propName = extractSubstringBefore(line, ";");
-    if (!propName) {
-      return NULL;
-    }
-  }
+  char propDescr[descriptionLength];
+  size_t substring = lineLength - descriptionLength;
+  memcpy(propDescr, tempLine + substring, descriptionLength);
+  propDescr[descriptionLength] = '\0';
   Property* p = createProperty(propName, propDescr);
-  safelyFreeString(propName);
+  // safelyFreeString(propName);
   return p;
 }
 
@@ -760,7 +776,6 @@ ErrorCode readLinesIntoList(char* fileName, List* list, int bufferSize) {
       return INV_CAL;
     }
   }
-
   safelyFreeString(line);
   fclose(file);
 
@@ -771,7 +786,9 @@ ErrorCode readLinesIntoList(char* fileName, List* list, int bufferSize) {
 }
 
 void deleteProperty(List* propList, char* line) {
-  Property* p = extractPropertyFromLine(line);
+  char temp[strlen(line) + 1]; // Make a temp variable that is allocated because extractPropertyFromLine uses strtok which cannot use a non existant memory address
+  strcpy(temp, line);
+  Property* p = extractPropertyFromLine(temp);
   safelyFreeString(deleteDataFromList(propList, p));
   free(p);
 }
@@ -780,6 +797,7 @@ ErrorCode extractBetweenTags(List props, List* extracted, ErrorCode onFailError,
   clearList(extracted); // Clear the list just in case
   ListIterator propsIterator = createIterator(props);
 
+  // Build the regex expressions for begin and end tags
   size_t tagSize = strlen(tag);
   size_t beginTagSize = (strlen("^BEGIN:$") + tagSize) * sizeof(char);
   char beginTag[beginTagSize];
@@ -800,13 +818,13 @@ ErrorCode extractBetweenTags(List props, List* extracted, ErrorCode onFailError,
   while ((prop = nextElement(&propsIterator)) != NULL) {
     char* line = props.printData(prop);
     if (match(line, beginTag)) {
-      beginCount ++;
+      beginCount ++; // Set begin flag
       if (beginCount != 1) {
         safelyFreeString(line);
         return onFailError; // Opened another event without closing the previous
       }
     } else if (match(line, endTag)) {
-      endCount ++;
+      endCount ++; // Set end flag
       if (endCount != beginCount) {
         safelyFreeString(line);
         return onFailError; // Closed an event without opening one
@@ -817,19 +835,20 @@ ErrorCode extractBetweenTags(List props, List* extracted, ErrorCode onFailError,
       Property* p = extractPropertyFromLine(line);
       insertBack(extracted, p);
     }
-    safelyFreeString(line);
+    safelyFreeString(line); // Bye
   }
-  if (beginCount == 0 && endCount == 0) {
+  if (beginCount == 0 && endCount == 0) { // If we didnt parse any tags at all
     return onFailError;
   }
 
-  if (beginCount == 1 && endCount != beginCount) { // If there is no end to the VEVENT
+  if (beginCount == 1 && endCount != beginCount) { // If there is no matching end tag
     return onFailError;
   }
 
-  return OK; // If we made it here, we have extracted the eventList
+  return OK; // If we made it here, we have extracted between the tags
 }
 
+// Make a string that is pretty (Just like you)
 char* printDatePretty(DateTime dt) {
   size_t size = 0;
   size += strlen(dt.date);
@@ -850,36 +869,41 @@ char* printDatePretty(DateTime dt) {
   return string;
 }
 
+// Creates a time and puts it into the sent event
 ErrorCode createTime(Event* event, char* timeString) {
-  if (!timeString || !event || !match(timeString, "^(:|;){0,1}[[:digit:]]{8}T[[:digit:]]{6}Z{0,1}$")) {
+  if (!timeString || !event || !match(timeString, "^(:|;){0,1}[[:digit:]]{8}T[[:digit:]]{6}Z{0,1}$")) { // If its null or doesnt match the required regex
     return INV_CREATEDT;
   }
   char* numberDate;
   char* timeS;
   if (match(timeString, "^(:|;)")) {
-    numberDate = extractSubstringBefore(&timeString[1], "T");
+    numberDate = extractSubstringBefore(&timeString[1], "T"); // Get substring before the T but start past the (semi)colon
   } else {
-    numberDate = extractSubstringBefore(timeString, "T");
+    numberDate = extractSubstringBefore(timeString, "T"); // Get the substring before the T
   }
-  char* temp = extractSubstringAfter(timeString, "T");
+  char* temp = extractSubstringAfter(timeString, "T"); // Extract after the T
   if (match(timeString, "Z$")) { // If UTC
     timeS = extractSubstringBefore(temp, "Z"); // Get the time between the T and Z
-    event->creationDateTime.UTC = true;
+    event->creationDateTime.UTC = true; // UTC is true
     safelyFreeString(temp); // Free temp
   } else {
     timeS = temp; // Get the time after T
     event->creationDateTime.UTC = false;
   }
-  if (!numberDate || !temp || !timeS) {
-    return INV_CREATEDT;
+  if (!numberDate || !temp || !timeS) { // We dont have all of the things we need
+    safelyFreeString(numberDate); // Free before returning
+    safelyFreeString(timeS);
+    return INV_CREATEDT; // We failed :'(
   }
-  strcpy(event->creationDateTime.date, numberDate);
+  strcpy(event->creationDateTime.date, numberDate); // Copy the values
   strcpy(event->creationDateTime.time, timeS);
-  safelyFreeString(numberDate);
+
+  safelyFreeString(numberDate); // Free before returning
   safelyFreeString(timeS);
-  return OK;
+  return OK; // You're OK but I have a girlfriend, sorry
 }
 
+// Remove the properties that are in l2 from l1
 void removeIntersectionOfLists(List* l1, List l2) {
   ListIterator eventIterator = createIterator(l2);
   char* line;
@@ -892,27 +916,25 @@ void removeIntersectionOfLists(List* l1, List l2) {
 }
 
 Event* newEmptyEvent() {
-  Event* e = malloc(sizeof(Event));
-  e->properties = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
+  Event* e = malloc(sizeof(Event)); // MAKE ROOM FOR ME, GOSH!
+  e->properties = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction); // Set the lists
   e->alarms = initializeList(&printAlarmListFunction, &deleteAlarmListFunction, &compareAlarmListFunction);
-  return e;
+  return e; // We done
 }
 
 List copyPropList(List toBeCopied) {
-  List newList = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
-  ListIterator iter = createIterator(toBeCopied);
+  List newList = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction); // Make a new list
+
+  ListIterator iter = createIterator(toBeCopied); // Make an iterator for ... well ... iterating
   Property* p;
 
   while ((p = nextElement(&iter)) != NULL) {
-    // printf("%s\n", p->propDescr);
-
-    char* c = toBeCopied.printData(p);
-    // printf("%s\n", c);
-    Property* p = extractPropertyFromLine(c);
-    insertBack(&newList, p);
-    safelyFreeString(c);
+    char* c = toBeCopied.printData(p); // Print the data
+    Property* p = extractPropertyFromLine(c); // Extract a property from the line
+    insertBack(&newList, p); // ... And the bus driver said, to the back, to the back
+    safelyFreeString(c); // Bye
   }
-  return newList;
+  return newList; // Return the new list
 }
 
 ErrorCode createEvent(List eventList, Event* event) {
@@ -928,45 +950,48 @@ ErrorCode createEvent(List eventList, Event* event) {
   // While we still have VALARM tags
   while (extractBetweenTags(newEventList, &alarmPropList, INV_EVENT, "VALARM") != INV_EVENT) {
     Alarm* a = createAlarmFromPropList(alarmPropList);
+
     if (a) {
-      insertBack(&event->alarms, a);
+      insertBack(&event->alarms, a); // Put the alarm in
       removeIntersectionOfLists(&newEventList, alarmPropList); // Remove all elements from alarmPropList in newEventList
-      deleteProperty(&newEventList, "BEGIN:VALARM");
+      deleteProperty(&newEventList, "BEGIN:VALARM"); // Remove Begin and end tags
       deleteProperty(&newEventList, "END:VALARM");
     } else {
-      clearList(&newEventList);
+      clearList(&newEventList); // Clear lists before returning
       clearList(&alarmPropList);
-      return INV_EVENT;
+      return INV_EVENT; // Invalid event
     }
     clearList(&alarmPropList); // Clear the list
   }
 
-  ListIterator eventIterator = createIterator(newEventList);
+  ListIterator eventIterator = createIterator(newEventList); // Iterate over remaining props
   Property* prop;
-  char* UID = NULL;
+
+  char* UID = NULL; // Placeholders for uid and dstamp
   char* DTSTAMP = NULL;
+
   while ((prop = nextElement(&eventIterator)) != NULL) {
-    char* propName = prop->propName;
+    char* propName = prop->propName; // make these for better readability
     char* propDescr = prop->propDescr;
-    if (match(propName, "^UID$")) {
-      if (UID != NULL || !propDescr || !strlen(propDescr)) {
-        safelyFreeString(UID);
+    if (match(propName, "^UID$")) { // If this is the UID
+      if (UID != NULL || !propDescr || !strlen(propDescr)) { // If there is a problem with it
+        safelyFreeString(UID); // Free strings before returning
         safelyFreeString(DTSTAMP);
-        clearList(&newEventList);
+        clearList(&newEventList); // Clear list before returning
         return INV_EVENT; // UID has already been assigned or propDesc is null or empty
       }
-      if (match(propDescr, "^(;|:)")) {
+      if (match(propDescr, "^(;|:)")) { // If the description starts with (semi)colon
         char temp[strlen(propDescr)];
-        memcpy(temp, propDescr + 1*sizeof(char), strlen(propDescr));
-        strcpy(event->UID, temp);
+        memcpy(temp, propDescr + 1*sizeof(char), strlen(propDescr)); // Shift the memory to get rid of the (semi)colon
+        strcpy(event->UID, temp); // Copy it over
       } else {
-        strcpy(event->UID, propDescr);
+        strcpy(event->UID, propDescr); // Copy it over
       }
 
-      UID = eventList.printData(prop);
+      UID = eventList.printData(prop); // Set the UID
     } else if (match(propName, "^DTSTAMP$")) {
-      if (DTSTAMP != NULL || !propDescr || !strlen(propDescr)) {
-        safelyFreeString(UID);
+      if (DTSTAMP != NULL || !propDescr) { // If the date is problematic
+        safelyFreeString(UID); // Free before returning
         safelyFreeString(DTSTAMP);
         clearList(&newEventList);
         return INV_EVENT; // DTSTAMP has already been assigned or propDesc is null or empty
@@ -1001,7 +1026,7 @@ ErrorCode createEvent(List eventList, Event* event) {
 }
 
 ErrorCode parseRequirediCalTags(List* list, Calendar* cal) {
-  ListIterator iterator = createIterator(*list);
+  ListIterator iterator = createIterator(*list); // Iterate over props
   Property* p;
   char* VERSION = NULL;
   char* PRODID = NULL;
@@ -1048,29 +1073,29 @@ ErrorCode parseRequirediCalTags(List* list, Calendar* cal) {
 
   cal->version = atof(VERSION);
   strcpy(cal->prodID, PRODID);
-  safelyFreeString(PRODID);
+  safelyFreeString(PRODID); // Free strings before returning
   safelyFreeString(VERSION);
   return OK;
 }
 
 void updateLongestLineAndIncrementStringSize(size_t* longestLine, size_t* lineLength, size_t* stringSize) {
-  if (*lineLength > *longestLine) {
-    *longestLine = *lineLength;
+  if (*lineLength > *longestLine) { // If this line is greater than the previous longest line
+    *longestLine = *lineLength; // Congrats, you are the new longest line
   }
-  *stringSize += *lineLength;
-  *lineLength = 0;
+  *stringSize += *lineLength; // Add this line length to the string size
+  *lineLength = 0; // Reset the line length
 }
 
 void calculateLineLength(size_t* lineLength, const char* c, ... ) {
    va_list valist;
    va_start(valist, c);
 
-   /* access all the arguments assigned to valist */
+   // Iterate over all variable params
    while (c) {
-        *lineLength += strlen(c);
-        c = va_arg(valist, const char*);
+        *lineLength += strlen(c); // Add the length of this string to the total
+        c = va_arg(valist, const char*); // Move to the next
     }
-   /* clean memory reserved for valist */
+   // Clear the va_list
    va_end(valist);
 }
 
@@ -1078,11 +1103,13 @@ void concatenateLine(char* string, const char* c, ... ) {
    va_list valist;
    va_start(valist, c);
 
-   /* access all the arguments assigned to valist */
+    // Iterate over all variable params
    while (c) {
         strcat(string, c); // concatenate each value onto the string
-        c = va_arg(valist, const char*);
+        c = va_arg(valist, const char*); // Move to the next
     }
-   /* clean memory reserved for valist */
+   // Clear the va_list
    va_end(valist);
 }
+
+// If you made it this far, you win. Too bad the prize is nothing

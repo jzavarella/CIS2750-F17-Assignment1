@@ -85,7 +85,7 @@ ErrorCode createCalendar(char* fileName, Calendar** obj) {
   calendar->event = event;
   List iCalPropertyList = initializeList(&printPropertyListFunction, &deletePropertyListFunction, &comparePropertyListFunction);
   ErrorCode lineCheckError = readLinesIntoList(fileName, &iCalPropertyList, 512); // Read the lines of the file into a list of properties
-
+  // printf("%s\n", toString(iCalPropertyList));
   if (lineCheckError != OK) { // If any of the lines were invalid, this will not return OK
     clearList(&iCalPropertyList);
     return lineCheckError;
@@ -375,29 +375,55 @@ char* printCalendar(const Calendar* obj) {
           the descr array using rhe error code enum value as an index
  *@param err - an error code
 **/
-const char* printError(ErrorCode err) {
+char* printError(ErrorCode err) {
+  char* error;
   switch (err) {
     case OK: // OK
-      return "OK";
+      error = malloc(sizeof("OK"));
+      strcpy(error, "OK");
+      break;
     case INV_FILE: // INV_FILE
-      return "Invalid File";
+      error = malloc(sizeof("Invalid File"));
+      strcpy(error, "Invalid File");
+      break;
     case INV_CAL: // INV_CAL
-      return "Invalid Calendar";
+      error = malloc(sizeof("Invalid Calendar"));
+      strcpy(error, "Invalid Calendar");
+      break;
     case INV_VER: // INV_VER
-      return "Malformed Version";
+      error = malloc(sizeof("Malformed Version"));
+      strcpy(error, "Malformed Version");
+      break;
     case DUP_VER: // DUP_VER
-      return "Non-Unique Version";
+      error = malloc(sizeof("Duplicate Version"));
+      strcpy(error, "Duplicate Version");
+      break;
     case INV_PRODID: // INV_PRODID
-      return "Malformed Product ID";
+      error = malloc(sizeof("Malformed Product ID"));
+      strcpy(error, "Malformed Product ID");
+      break;
     case DUP_PRODID: // DUP_PRODID
-      return "Non-Unique Product ID";
+      error = malloc(sizeof("Duplicate Product ID"));
+      strcpy(error, "Duplicate Product ID");
+      break;
     case INV_EVENT: // INV_EVENT
-      return "Malformed Event";
+      error = malloc(sizeof("Invalid Event"));
+      strcpy(error, "Invalid Event");
+      break;
     case INV_CREATEDT: // INV_CREATEDT
-      return "Malformed Date-Time";
+      error = malloc(sizeof("Malformed Date"));
+      strcpy(error, "Malformed Date");
+      break;
+    case OTHER_ERROR:
+      error = malloc(sizeof("Generic Error"));
+      strcpy(error, "Generic Error");
+      break;
     default:
-      return "NULL";
+      error = malloc(sizeof("NULL"));
+      strcpy(error, "NULL");
+      break;
   }
+  return error;
 }
 
 // <------START OF HELPER FUNCTIONS----->
@@ -410,7 +436,7 @@ int match(const char* string, char* pattern) {
   int status;
   regex_t regex;
   int d;
-  if ((d = regcomp(&regex, pattern, REG_EXTENDED|REG_NOSUB)) != 0) {
+  if ((d = regcomp(&regex, pattern, REG_EXTENDED|REG_NOSUB|REG_ICASE)) != 0) {
     return 0;
   }
 
@@ -655,6 +681,7 @@ Property* extractPropertyFromLine(char* line) {
     return NULL;
   }
   propName = extractSubstringBefore(line, ":");
+  // printf("Before':'    %s\n", propName);
   if (!propName) {
     propName = extractSubstringBefore(line, ";");
     if (!propName) {
@@ -717,9 +744,13 @@ ErrorCode readLinesIntoList(char* fileName, List* list, int bufferSize) {
 
       continue; // Continue to the next line
     }
-    if (match(line, "^[[:alpha:]]+(:|;).*$")) {
+    if (match(line, "^[a-zA-Z\\-]+(:|;).*\n{0,1}$")) {
       if (line[strlen(line) - 1] == '\n') { // Remove new line from end of line
-        line[strlen(line) - 1] = '\0';
+        if ((int)strlen(line) - 2 >= 0 && line[strlen(line) - 2] == '\r') { // Remove carriage return if it exists
+          line[strlen(line) - 2] = '\0';
+        } else {
+          line[strlen(line) - 1] = '\0';
+        }
       }
       Property* p = extractPropertyFromLine(line);
       insertBack(list, p); // Insert the property into the list
@@ -788,7 +819,6 @@ ErrorCode extractBetweenTags(List props, List* extracted, ErrorCode onFailError,
     }
     safelyFreeString(line);
   }
-
   if (beginCount == 0 && endCount == 0) {
     return onFailError;
   }
@@ -874,7 +904,10 @@ List copyPropList(List toBeCopied) {
   Property* p;
 
   while ((p = nextElement(&iter)) != NULL) {
+    // printf("%s\n", p->propDescr);
+
     char* c = toBeCopied.printData(p);
+    // printf("%s\n", c);
     Property* p = extractPropertyFromLine(c);
     insertBack(&newList, p);
     safelyFreeString(c);

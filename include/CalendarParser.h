@@ -103,6 +103,6 @@ char* printCalendar(const Calendar* obj);
           the descr array using rhe error code enum value as an index
  *@param err - an error code
 **/
-const char* printError(ErrorCode err);
+char* printError(ErrorCode err);
 
 #endif

@@ -1,3 +1,10 @@
+/*
+ * CIS2750 F2017
+ * Assignment 1
+ * Jackson Zavarella 0929350
+ */
+
+
 #ifndef CALENDARPARSER_H
 #define CALENDARPARSER_H
 

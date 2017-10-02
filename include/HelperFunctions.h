@@ -1,3 +1,12 @@
+/*
+ * CIS2750 F2017
+ * Assignment 1
+ * Jackson Zavarella 0929350
+ * This file contains all of the helper functions for calendar parser
+ * No code was used from previous classes/ sources
+ */
+
+
 // Print function for property list
 char* printPropertyListFunction(void *toBePrinted);
 // Compare function for property list
@@ -10,7 +19,7 @@ char* printAlarmListFunction(void *toBePrinted);
 int compareAlarmListFunction(const void *first, const void *second);
 // Delete functino for alarm list
 void deleteAlarmListFunction(void *toBeDeleted);
-int match(const char* string, char* pattern); // Matches a given string against aregex expression
+int match(const char* string, char* pattern); // Matches a given string against a regex expression
 void safelyFreeString(char* c); // Frees a string but checks to see if it is null first
 Property* createProperty(char* propName, char* propDescr); // Create a property from a name and a description
 Alarm* createAlarm(char* action, char* trigger, List properties); // Create an alarm given and action and a trigger and a list of properties

@@ -6,7 +6,6 @@ void test(char* fileName, ErrorCode expectedResult);
 
 int main(int argc, char const *argv[]) {
 
-
   printf("----FILE ERRORS:\n");
   test(NULL, INV_FILE); // Filename is NULL
   test("", INV_FILE); // Empty String

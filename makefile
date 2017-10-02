@@ -12,7 +12,7 @@ LISTO = src/LinkedListAPI.o
 LIBLIST = bin/libllist.a
 
 INCLUDES = include/
-LIBS = -lllist -lcparse
+LIBS = -lcparse -lllist
 
 TARGET = iCalendar
 

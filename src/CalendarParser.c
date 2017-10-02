@@ -6,7 +6,7 @@
  * No code was used from previous classes/ sources
  */
 
- #define _GNU_SOURCE
+#define _GNU_SOURCE
 
 #include <regex.h>
 #include <stdio.h>

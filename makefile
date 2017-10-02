@@ -34,7 +34,7 @@ parser:
 
 main:
 	$(CC) $(CFLAGS) $(MAINC) -o $(MAINO) -c -I $(INCLUDES)
-	$(CC) $(CFLAGS) $(MAINO) -o $(TARGET) -Lbin/ $(LIBS)
+	$(CC) $(CFLAGS) $(MAINO) -Lbin/ $(LIBS) -o $(TARGET)
 
 valgrind:
 	valgrind --leak-check=full ./$(TARGET)

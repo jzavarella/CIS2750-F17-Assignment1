@@ -1,7 +1,5 @@
 CC = gcc
 CFLAGS = -Wall -std=c11 -g
-MAINC = src/Main.c
-MAINO = src/Main.o
 
 CALENDARPARSERC = src/CalendarParser.c
 CALENDARO = src/CalendarParser.o
@@ -12,17 +10,10 @@ LISTO = src/LinkedListAPI.o
 LIBLIST = bin/libllist.a
 
 INCLUDES = include/
-LIBS = -lcparse -lllist
-
-TARGET = iCalendar
 
 all:
 	make list
 	make parser
-	make main
-
-run:
-	./$(TARGET)
 
 list:
 	$(CC) $(CFLAGS) -c $(LINKEDLISTC) -o $(LISTO)
@@ -32,12 +23,5 @@ parser:
 	$(CC) $(CFLAGS) -c $(CALENDARPARSERC) -o  $(CALENDARO) -I $(INCLUDES)
 	ar cr $(LIBCPARSE) $(CALENDARO)
 
-main:
-	$(CC) $(CFLAGS) $(MAINC) -o $(MAINO) -c -I $(INCLUDES)
-	$(CC) $(CFLAGS) $(MAINO) -Lbin/ $(LIBS) -o $(TARGET)
-
-valgrind:
-	valgrind --leak-check=full ./$(TARGET)
-
 clean:
-	rm -f $(LIBLIST) $(LIBCPARSE) $(CALENDARO) $(LISTO) $(MAINO) $(TARGET)
+	rm -f $(LIBLIST) $(LIBCPARSE) $(CALENDARO) $(LISTO)

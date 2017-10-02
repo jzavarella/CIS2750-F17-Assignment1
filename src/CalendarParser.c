@@ -489,8 +489,13 @@ char* printAlarmListFunction(void *toBePrinted) {
 
 // This hasnt been required yet
 int compareAlarmListFunction(const void *first, const void *second) {
-  //TODO: Create this
-  return 0;
+  char* s1 = printAlarmListFunction((void*)first); // Print each prop
+  char* s2 = printAlarmListFunction((void*)second);
+  int result = strcmp(s1, s2); // Compare the strings
+
+  safelyFreeString(s1); // BECAUSE I'M FREEEEE!!!!! FREE FALLIN'
+  safelyFreeString(s2);
+	return result; // Return the result
 }
 
 void deleteAlarmListFunction(void *toBeDeleted) {

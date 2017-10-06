@@ -28,9 +28,10 @@
  *@param a double pointer to a Calendar struct that needs to be allocated
 **/
 ErrorCode createCalendar(char* fileName, Calendar** obj) {
+  *obj = malloc(sizeof(Calendar));
   Calendar* calendar = *obj;
   strcpy(calendar->prodID, ""); // Ensure that this field is not blank to prevent uninitialized conditinoal jump errors in valgrind
-
+  // calendar->version = -1;
   Event* event = newEmptyEvent(); // Create an empty event
   calendar->event = event; // Assign the empty event
 
@@ -401,7 +402,7 @@ int match(const char* string, char* pattern) {
 }
 
 int matchTEXTField(const char* propDescription) {
-  return match(propDescription, "^(;|:)[^[:cntrl:]\"\\,:;]+$"); // This regex matches valid text characters
+  return match(propDescription, "^(;|:){0,1}[^[:cntrl:]\"\\,:;]+$"); // This regex matches valid text characters
 }
 
 // Check if the string is allocated before freeing it
@@ -426,8 +427,14 @@ char* printPropertyListFunction(void *toBePrinted) {
     i ++; // Calculate length of description
   }
   finalSize += i; // add it up again
-  char* string = malloc(finalSize + 1); // +1 to make room for NULL terminator
+  if (p->propDescr[0] != ';' && p->propDescr[0] != ':') {
+    finalSize ++;
+  }
+  char* string = calloc(finalSize + 1, 1); // +1 to make room for NULL terminator
   strcpy(string, p->propName);
+  if (p->propDescr[0] != ';' && p->propDescr[0] != ':') {
+    strcat(string, ":");
+  }
   strcat(string, p->propDescr);
   string[finalSize] = '\0'; // Set null terminator just in case strcat didnt
   return string;
@@ -555,15 +562,17 @@ Alarm* createAlarmFromPropList(List props) {
   while ((prop = nextElement(&propsIterator)) != NULL) {
     char* propName = prop->propName; // Get name
     char* propDescr = prop->propDescr; // Get description
-    if (!propDescr) { // If no descripting, we are in trouble
+
+    if (strcmp(propDescr, "") == 0 || strcmp(propName, "") == 0) { // If no descripting, we are in trouble
       clearList(&alarmProps); // Clear before returning
       return NULL; // Bye
     }
-
     char tempDescription[strlen(propDescr) + 2]; //
     strcpy(tempDescription, propDescr);
-    memmove(tempDescription, tempDescription+1, strlen(tempDescription)); // remove the first character as it is (; or :)
-    if (match(propName, "^ACTION")) {
+    if (match(tempDescription, "^(;|:)")) {
+      memmove(tempDescription, tempDescription+1, strlen(tempDescription)); // remove the first character as it is (; or :)
+    }
+    if (match(propName, "^ACTION$")) {
       if (ACTION || !match(tempDescription, "^(AUDIO|DISPLAY|EMAIL)$")) {
         clearList(&alarmProps);
         return NULL; // Already have an ACTION or description is null
@@ -655,12 +664,12 @@ Property* extractPropertyFromLine(char* line) {
     descriptionLength += strlen(temp);
     descriptionLength += 1; // strtok removes the ';'
   }
-  char propDescr[descriptionLength];
-  size_t substring = lineLength - descriptionLength;
+  // descriptionLength += 1; // strtok removes the ';'
+  char propDescr[descriptionLength + 1];
+  size_t substring = lineLength - descriptionLength + 1;
   memcpy(propDescr, tempLine + substring, descriptionLength);
   propDescr[descriptionLength] = '\0';
   Property* p = createProperty(propName, propDescr);
-  // safelyFreeString(propName);
   return p;
 }
 
@@ -715,12 +724,14 @@ ErrorCode readLinesIntoList(char* fileName, List* list, int bufferSize) {
 
       continue; // Continue to the next line
     }
-    if (match(line, "^[a-zA-Z\\-]+(:|;).*\n{0,1}$")) {
+    if (match(line, "^[a-zA-Z\\-]*(:|;).*\n{0,1}$")) {
       if (line[strlen(line) - 1] == '\n') { // Remove new line from end of line
         if ((int)strlen(line) - 2 >= 0 && line[strlen(line) - 2] == '\r') { // Remove carriage return if it exists
           line[strlen(line) - 2] = '\0';
         } else {
-          line[strlen(line) - 1] = '\0';
+          safelyFreeString(line);
+          fclose(file);
+          return INV_CAL;
         }
       }
       Property* p = extractPropertyFromLine(line);
@@ -928,6 +939,12 @@ ErrorCode createEvent(List eventList, Event* event) {
   while ((prop = nextElement(&eventIterator)) != NULL) {
     char* propName = prop->propName; // make these for better readability
     char* propDescr = prop->propDescr;
+    if (strcmp(propDescr, "") == 0 || strcmp(propName, "") == 0) { // If no descripting, we are in trouble
+      safelyFreeString(UID); // Free strings before returning
+      safelyFreeString(DTSTAMP);
+      clearList(&newEventList); // Clear list before returning
+      return INV_EVENT;
+    }
     if (match(propName, "^UID$")) { // If this is the UID
       if (UID != NULL || !propDescr || !strlen(propDescr)) { // If there is a problem with it
         safelyFreeString(UID); // Free strings before returning
@@ -995,14 +1012,18 @@ ErrorCode parseRequirediCalTags(List* list, Calendar* cal) {
         safelyFreeString(VERSION); // Version might be allocated so we must remove it before returning
         return DUP_VER;
       }
-      if (!description || !match(description, "^(:|;)[[:digit:]]+(\\.[[:digit:]]+)*$")) {
+      if (!description || !match(description, "^(:|;){0,1}[[:digit:]]+(\\.[[:digit:]]+)*$")) {
         safelyFreeString(PRODID); // PROD might be allocated so we must remove it before returning
         safelyFreeString(VERSION); // Version might be allocated so we must remove it before returning
         return INV_VER;
       }
 
-      VERSION = malloc(strlen(description) * sizeof(char));
-      memmove(VERSION, description+1, strlen(description)); // remove the first character as it is (; or :)
+      VERSION = malloc(strlen(description) * sizeof(char) + 1);
+      if (match(description, "^(;|:)")) {
+        memmove(VERSION, description+1, strlen(description)); // remove the first character as it is (; or :)
+      } else {
+        strcpy(VERSION, description);
+      }
     } else if (match(name, "^PRODID$")) {
       if (PRODID) {
         safelyFreeString(PRODID); // PROD might be allocated so we must remove it before returning
@@ -1015,8 +1036,13 @@ ErrorCode parseRequirediCalTags(List* list, Calendar* cal) {
         safelyFreeString(VERSION); // Version might be allocated so we must remove it before returning
         return INV_PRODID;
       }
-      PRODID = malloc(strlen(description) * sizeof(char));
-      memmove(PRODID, description+1, strlen(description)); // remove the first character as it is (; or :)
+      PRODID = malloc(strlen(description) * sizeof(char) + 1);
+      if (match(description, "^(;|:)")) {
+        memmove(PRODID, description+1, strlen(description)); // remove the first character as it is (; or :)
+      } else {
+        printf("nope: %s\n", description);
+        strcpy(PRODID, description);
+      }
     }
   }
 

@@ -16,12 +16,9 @@ INCLUDES = include/
 all:
 	make list
 	make parser
-
-run:
-	./$(TARGET)
-
+	
 list: $(LINKEDLISTC) $(LINKEDLISTH)
-	$(CC) $(CFLAGS) -c $(LINKEDLISTC) -o $(LISTO)
+	$(CC) $(CFLAGS) -c $(LINKEDLISTC) -o $(LISTO) -I $(INCLUDES)
 	ar cr $(LIBLIST) $(LISTO)
 
 parser: $(LINKEDLISTC) $(LINKEDLISTH) $(CALENDARPARSERC) $(CALENDARPARSERH)

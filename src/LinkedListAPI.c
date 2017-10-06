@@ -14,7 +14,7 @@
 
 
 
-#include "../include/LinkedListAPI.h"
+#include "LinkedListAPI.h"
 
 /** Function to initialize the list metadata head with the appropriate function pointers.
 *@return the list struct
